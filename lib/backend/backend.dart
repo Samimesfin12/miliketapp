@@ -1,0 +1,21 @@
+// Local-first backend (SQLite, repositories, services, Riverpod providers).
+export 'package:esl_learning_flutter/backend/ai/mediapipe_processor.dart';
+export 'package:esl_learning_flutter/backend/ai/tflite_classifier.dart';
+export 'package:esl_learning_flutter/backend/controllers/ai_practice_controller.dart';
+export 'package:esl_learning_flutter/backend/auth/auth_session_notifier.dart';
+export 'package:esl_learning_flutter/backend/auth/session_prefs.dart';
+export 'package:esl_learning_flutter/backend/controllers/dictionary_controller.dart';
+export 'package:esl_learning_flutter/backend/controllers/lesson_controller.dart';
+export 'package:esl_learning_flutter/backend/controllers/progress_controller.dart';
+export 'package:esl_learning_flutter/backend/controllers/quiz_controller.dart';
+export 'package:esl_learning_flutter/backend/database/db_constants.dart';
+export 'package:esl_learning_flutter/backend/database/sqlite_helper.dart';
+export 'package:esl_learning_flutter/backend/providers.dart';
+export 'package:esl_learning_flutter/backend/repositories/ai_feedback_repository.dart';
+export 'package:esl_learning_flutter/backend/repositories/dictionary_repository.dart';
+export 'package:esl_learning_flutter/backend/repositories/lesson_repository.dart';
+export 'package:esl_learning_flutter/backend/repositories/progress_repository.dart';
+export 'package:esl_learning_flutter/backend/repositories/quiz_repository.dart';
+export 'package:esl_learning_flutter/backend/repositories/user_repository.dart';
+export 'package:esl_learning_flutter/backend/services/localisation_service.dart';
+export 'package:esl_learning_flutter/backend/services/video_downloader.dart';
