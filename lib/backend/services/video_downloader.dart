@@ -84,6 +84,53 @@ final class VideoDownloader {
     );
   }
 
+  /// Downloads a video (either a Google Drive ID/URL or a standard web URL) to the local file system.
+  Future<void> downloadVideoToFile({
+    required String urlOrFileId,
+    required String destinationPath,
+    void Function(int received, int total)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    await Directory(p.dirname(destinationPath)).create(recursive: true);
+    final dest = File(destinationPath);
+
+    final driveId = parseDriveFileId(urlOrFileId);
+    if (driveId != null) {
+      final resolved = await _resolveDownloadTarget(driveId, cancelToken);
+      if (resolved is _DirectBytes) {
+        await dest.writeAsBytes(resolved.bytes, flush: true);
+        onProgress?.call(resolved.bytes.length, resolved.bytes.length);
+        return;
+      }
+
+      final url = (resolved as _StreamUrl).url;
+      var resumeFrom = 0;
+      if (await dest.exists()) {
+        resumeFrom = await dest.length();
+      }
+
+      await _streamDownloadWithResume(
+        url: url,
+        destination: dest,
+        resumeFrom: resumeFrom,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
+    } else {
+      var resumeFrom = 0;
+      if (await dest.exists()) {
+        resumeFrom = await dest.length();
+      }
+      await _streamDownloadWithResume(
+        url: urlOrFileId,
+        destination: dest,
+        resumeFrom: resumeFrom,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
+    }
+  }
+
   /// First hop: small HTML (virus scan) vs immediate binary (small files).
   Future<_DownloadTarget> _resolveDownloadTarget(
     String fileId,

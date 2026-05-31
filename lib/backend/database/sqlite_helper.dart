@@ -38,7 +38,34 @@ final class SQLiteHelper {
         await _seedInitialData(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        // Future migrations: bump [DbConstants.schemaVersion] and migrate here.
+        if (oldVersion < 2) {
+          await db.update(
+            'lessons',
+            {'video_url': 'drive:1wQoueUDZVv_HBqmmcOmSIST3GqPtW9td'},
+            where: 'id = ?',
+            whereArgs: ['g2'],
+          );
+          await db.update(
+            'dictionary_signs',
+            {'video_url': 'drive:1wQoueUDZVv_HBqmmcOmSIST3GqPtW9td'},
+            where: 'id = ?',
+            whereArgs: ['dict_g2'],
+          );
+        }
+        if (oldVersion < 3) {
+          // Create the sign_templates table
+          await db.execute('''
+CREATE TABLE sign_templates (
+  sign_id TEXT NOT NULL PRIMARY KEY,
+  coordinates TEXT NOT NULL
+);
+''');
+          // Seed the 'three' gesture coordinates
+          await db.insert('sign_templates', {
+            'sign_id': 'three',
+            'coordinates': '0.0,0.0,0.0,0.2082,-0.1467,-0.0924,0.3498,-0.4279,-0.1198,0.2573,-0.6575,-0.1373,0.0932,-0.7832,-0.1597,0.2794,-0.9444,-0.0513,0.3541,-1.2841,-0.092,0.4008,-1.4843,-0.1326,0.4288,-1.671,-0.1656,0.1092,-0.9862,-0.0691,0.1407,-1.4013,-0.1055,0.1563,-1.6445,-0.1588,0.1661,-1.8622,-0.1956,-0.0496,-0.9128,-0.0982,-0.0701,-1.2798,-0.1924,-0.063,-1.5256,-0.2846,-0.0647,-1.7461,-0.3433,-0.2024,-0.7479,-0.1299,-0.1474,-0.9453,-0.2362,-0.0701,-0.8195,-0.2595,-0.017,-0.6689,-0.2651'
+          });
+        }
       },
     );
   }
@@ -158,6 +185,13 @@ CREATE TABLE favourites (
 );
 ''');
 
+    await db.execute('''
+CREATE TABLE sign_templates (
+  sign_id TEXT NOT NULL PRIMARY KEY,
+  coordinates TEXT NOT NULL
+);
+''');
+
     await db.execute('CREATE INDEX idx_progress_user ON progress (user_id);');
     await db.execute(
       'CREATE INDEX idx_lessons_category ON lessons (category_id, order_index);',
@@ -172,9 +206,11 @@ CREATE TABLE favourites (
 
   /// Seeds categories, lessons, and dictionary rows from existing in-app curriculum.
   static Future<void> _seedInitialData(Database db) async {
+    final batch = db.batch();
+
     for (var i = 0; i < app.categories.length; i++) {
       final c = app.categories[i];
-      await db.insert('categories', {
+      batch.insert('categories', {
         'id': c.id,
         'title': c.title,
         'title_am': c.titleAm,
@@ -191,28 +227,63 @@ CREATE TABLE favourites (
       for (var i = 0; i < lessons.length; i++) {
         final l = lessons[i];
         final locked = i == 0 ? 0 : 1;
-        await db.insert('lessons', {
+        batch.insert('lessons', {
           'id': l.id,
           'category_id': categoryId,
           'sign_en': l.sign,
           'sign_am': l.signAm,
           'thumbnail_emoji': l.thumbnail,
-          'video_url': null,
+          'video_url': l.videoUrl,
           'video_local_path': null,
           'locked': locked,
           'order_index': i,
         });
 
-        await db.insert('dictionary_signs', {
+        batch.insert('dictionary_signs', {
           'id': 'dict_${l.id}',
           'sign_en': l.sign,
           'sign_am': l.signAm,
           'thumbnail_emoji': l.thumbnail,
-          'video_url': null,
+          'video_url': l.videoUrl,
           'video_local_path': null,
         });
       }
     }
+
+    // Preseed the sign 'three' coordinates template
+    batch.insert('sign_templates', {
+      'sign_id': 'three',
+      'coordinates': '0.0,0.0,0.0,0.2082,-0.1467,-0.0924,0.3498,-0.4279,-0.1198,0.2573,-0.6575,-0.1373,0.0932,-0.7832,-0.1597,0.2794,-0.9444,-0.0513,0.3541,-1.2841,-0.092,0.4008,-1.4843,-0.1326,0.4288,-1.671,-0.1656,0.1092,-0.9862,-0.0691,0.1407,-1.4013,-0.1055,0.1563,-1.6445,-0.1588,0.1661,-1.8622,-0.1956,-0.0496,-0.9128,-0.0982,-0.0701,-1.2798,-0.1924,-0.063,-1.5256,-0.2846,-0.0647,-1.7461,-0.3433,-0.2024,-0.7479,-0.1299,-0.1474,-0.9453,-0.2362,-0.0701,-0.8195,-0.2595,-0.017,-0.6689,-0.2651'
+    });
+
+    await batch.commit(noResult: true);
+  }
+
+  Future<void> saveSignTemplate(String signId, List<double> coordinates) async {
+    final db = await database;
+    final coordString = coordinates.map((c) => c.toStringAsFixed(4)).join(',');
+    await db.insert(
+      'sign_templates',
+      {
+        'sign_id': signId.toLowerCase().trim(),
+        'coordinates': coordString,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<double>?> getSignTemplate(String signId) async {
+    final db = await database;
+    final maps = await db.query(
+      'sign_templates',
+      columns: ['coordinates'],
+      where: 'sign_id = ?',
+      whereArgs: [signId.toLowerCase().trim()],
+    );
+    if (maps.isEmpty) return null;
+    
+    final String coordString = maps.first['coordinates'] as String;
+    return coordString.split(',').map((s) => double.tryParse(s) ?? 0.0).toList();
   }
 }
 

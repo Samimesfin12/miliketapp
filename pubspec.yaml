@@ -51,11 +51,9 @@ dependencies:
   flutter_riverpod: ^2.6.1
 
   # --- AI practice (camera + on-device TFLite) ---
-  # Hand landmarks: wire MediaPipe / ML Kit in a later step (pub package name
-  # must match your target SDK; add alongside native config when implementing).
   camera: ^0.11.2
-  # 0.12.1+ bundles LiteRT natives with 16 KB ELF alignment (Android 15 / Play requirement).
   tflite_flutter: ^0.12.1
+  hand_landmarker: ^2.1.2
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

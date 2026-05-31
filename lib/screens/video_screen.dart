@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:esl_learning_flutter/data/app_data.dart';
@@ -125,22 +126,49 @@ class _VideoScreenState extends State<VideoScreen> {
                 ),
                 if (widget.showDownloadButton) ...[
                   const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: widget.downloadInProgress
-                        ? null
-                        : () => unawaited(widget.onDownloadVideo()),
-                    icon: widget.downloadInProgress
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.download_outlined),
-                    label: Text(
-                      widget.language == 'en'
-                          ? 'Download for offline'
-                          : 'ከመስመር ውጭ ያውርዱ',
-                    ),
+                  Builder(
+                    builder: (context) {
+                      final localPath = widget.lesson.videoLocalPath;
+                      final isDownloaded = localPath != null &&
+                          localPath.isNotEmpty &&
+                          File(localPath).existsSync();
+
+                      if (isDownloaded) {
+                        return OutlinedButton.icon(
+                          onPressed: null,
+                          icon: const Icon(
+                            Icons.check_circle_outline,
+                            color: Colors.green,
+                          ),
+                          label: Text(
+                            widget.language == 'en'
+                                ? 'Downloaded (Offline)'
+                                : 'ወርዷል (ከመስመር ውጭ)',
+                            style: const TextStyle(color: Colors.green),
+                          ),
+                        );
+                      }
+
+                      return OutlinedButton.icon(
+                        onPressed: widget.downloadInProgress
+                            ? null
+                            : () => unawaited(widget.onDownloadVideo()),
+                        icon: widget.downloadInProgress
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.download_outlined),
+                        label: Text(
+                          widget.language == 'en'
+                              ? 'Download for offline'
+                              : 'ከመስመር ውጭ ያውርዱ',
+                        ),
+                      );
+                    },
                   ),
                   if (widget.downloadInProgress &&
                       widget.downloadProgress != null) ...[

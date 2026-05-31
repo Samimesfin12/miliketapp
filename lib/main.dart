@@ -22,6 +22,7 @@ import 'package:esl_learning_flutter/screens/dictionary_screen.dart';
 import 'package:esl_learning_flutter/screens/profile_screen.dart';
 import 'package:esl_learning_flutter/screens/quiz_screen.dart';
 import 'package:esl_learning_flutter/screens/ai_practice_screen.dart';
+import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,70 +78,100 @@ class _RootAppState extends ConsumerState<RootApp> {
   @override
   void initState() {
     super.initState();
-    boot();
-  }
-
-  Future<void> boot() async {
-    await ref.read(authSessionProvider.notifier).bootstrap();
-    final prefs = await SharedPreferences.getInstance();
-    language = prefs.getString('preferredLanguage') ?? 'en';
-    userName = prefs.getString('userName') ?? 'Learner';
-    userEmail = prefs.getString('userEmail') ?? 'learner@ethsl.app';
-
-    final auth = ref.read(authSessionProvider);
-    if (auth.isAuthenticated && auth.userId != null) {
-      await _hydrateProgressForUser(auth.userId!);
-    } else {
-      completedLessons.clear();
-      completedLessons.addAll(prefs.getStringList('completedLessons') ?? []);
-      signsLearned = countCompletedInCurriculum(completedLessons);
-      streak = prefs.getInt('streak') ?? 0;
-      totalHours = prefs.getInt('totalHours') ?? 0;
-    }
-
-    if (auth.isAuthenticated) {
-      userName = auth.fullName ?? userName;
-      userEmail = auth.email ?? userEmail;
-    }
-
-    final hasSeenOnboarding = prefs.getBool('hasSeenOnboarding') ?? false;
-    if (!mounted) return;
-    setState(() {
-      showSplash = false;
-      showOnboarding = auth.isAuthenticated && !hasSeenOnboarding;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      boot();
     });
   }
 
+  Future<void> boot() async {
+    try {
+      // Bootstrap auth with timeout
+      try {
+        await Future.wait([
+          ref.read(authSessionProvider.notifier).bootstrap(),
+        ]).timeout(const Duration(seconds: 10));
+      } on TimeoutException {
+        debugPrint('Auth bootstrap timeout');
+      }
+    } catch (e, st) {
+      debugPrint('Auth bootstrap error: $e\n$st');
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      language = prefs.getString('preferredLanguage') ?? 'en';
+      userName = prefs.getString('userName') ?? 'Learner';
+      userEmail = prefs.getString('userEmail') ?? 'learner@ethsl.app';
+
+      final auth = ref.read(authSessionProvider);
+      if (auth.isAuthenticated && auth.userId != null) {
+        await _hydrateProgressForUser(auth.userId!);
+      } else {
+        completedLessons.clear();
+        completedLessons.addAll(prefs.getStringList('completedLessons') ?? []);
+        signsLearned = countCompletedInCurriculum(completedLessons);
+        streak = prefs.getInt('streak') ?? 0;
+        totalHours = prefs.getInt('totalHours') ?? 0;
+      }
+
+      if (auth.isAuthenticated) {
+        userName = auth.fullName ?? userName;
+        userEmail = auth.email ?? userEmail;
+      }
+
+      final hasSeenOnboarding = prefs.getBool('hasSeenOnboarding') ?? false;
+      if (!mounted) return;
+      setState(() {
+        showSplash = false;
+        showOnboarding = auth.isAuthenticated && !hasSeenOnboarding;
+      });
+    } catch (e, st) {
+      debugPrint('Boot sequence error: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        showSplash = false;
+      });
+    }
+  }
+
   Future<void> _hydrateProgressForUser(int userId) async {
-    final progressRepo = ref.read(progressRepositoryProvider);
-    final userRepo = ref.read(userRepositoryProvider);
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      final progressRepo = ref.read(progressRepositoryProvider);
+      final userRepo = ref.read(userRepositoryProvider);
+      final prefs = await SharedPreferences.getInstance();
 
-    completedLessons.clear();
-    completedLessons.addAll(await progressRepo.completedLessonIds(userId));
+      completedLessons.clear();
+      completedLessons.addAll(await progressRepo.completedLessonIds(userId));
 
-    final fromPrefs = prefs.getStringList('completedLessons') ?? [];
-    for (final id in fromPrefs) {
-      await progressRepo.markLessonCompleted(userId, id);
-    }
-    if (fromPrefs.isNotEmpty) {
-      await prefs.remove('completedLessons');
-    }
-    completedLessons.clear();
-    completedLessons.addAll(await progressRepo.completedLessonIds(userId));
+      final fromPrefs = prefs.getStringList('completedLessons') ?? [];
+      for (final id in fromPrefs) {
+        try {
+          await progressRepo.markLessonCompleted(userId, id);
+        } catch (e) {
+          debugPrint('Error marking lesson $id completed: $e');
+        }
+      }
+      if (fromPrefs.isNotEmpty) {
+        await prefs.remove('completedLessons');
+      }
+      completedLessons.clear();
+      completedLessons.addAll(await progressRepo.completedLessonIds(userId));
 
-    final user = await userRepo.getUserById(userId);
-    if (user != null) {
-      streak = (user['day_streak'] as int?) ?? 0;
-      totalHours = (user['total_practiced'] as int?) ?? 0;
+      final user = await userRepo.getUserById(userId);
+      if (user != null) {
+        streak = (user['day_streak'] as int?) ?? 0;
+        totalHours = (user['total_practiced'] as int?) ?? 0;
+      }
+      signsLearned = countCompletedInCurriculum(completedLessons);
+      await userRepo.updateCounters(
+        userId: userId,
+        signsLearned: signsLearned,
+        dayStreak: streak,
+        totalPracticed: totalHours,
+      );
+    } catch (e, st) {
+      debugPrint('Error hydrating progress for user $userId: $e\n$st');
     }
-    signsLearned = countCompletedInCurriculum(completedLessons);
-    await userRepo.updateCounters(
-      userId: userId,
-      signsLearned: signsLearned,
-      dayStreak: streak,
-      totalPracticed: totalHours,
-    );
   }
 
   Future<void> _hydrateAfterAuth(int userId) async {
@@ -212,18 +243,9 @@ class _RootAppState extends ConsumerState<RootApp> {
   Future<void> _downloadLessonVideo() async {
     final lesson = selectedLesson;
     if (lesson == null) return;
-    final fileId = VideoDownloader.parseDriveFileId(lesson.videoUrl);
-    if (fileId == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No Google Drive file for this lesson. Set lessons.video_url to drive:FILE_ID or a Drive link.',
-          ),
-        ),
-      );
-      return;
-    }
+    final downloadUrl = lesson.videoUrl?.trim() ?? sampleStreamUriForLesson(lesson).toString();
+    if (downloadUrl.isEmpty) return;
+
     _videoDownloadCancel?.cancel();
     _videoDownloadCancel = CancelToken();
     setState(() {
@@ -233,8 +255,8 @@ class _RootAppState extends ConsumerState<RootApp> {
     try {
       final dir = await getApplicationSupportDirectory();
       final dest = VideoDownloader.defaultLessonVideoPath(dir, lesson.id);
-      await ref.read(videoDownloaderProvider).downloadDriveVideoToFile(
-            fileId: fileId,
+      await ref.read(videoDownloaderProvider).downloadVideoToFile(
+            urlOrFileId: downloadUrl,
             destinationPath: dest,
             cancelToken: _videoDownloadCancel,
             onProgress: (received, total) {
@@ -359,10 +381,7 @@ class _RootAppState extends ConsumerState<RootApp> {
                 lesson: selectedLesson!,
                 downloadInProgress: videoDownloadBusy,
                 downloadProgress: videoDownloadProgress,
-                showDownloadButton: VideoDownloader.parseDriveFileId(
-                      selectedLesson!.videoUrl,
-                    ) !=
-                    null,
+                showDownloadButton: true,
                 onDownloadVideo: _downloadLessonVideo,
                 onBack: () => setState(() => overlay = AppOverlay.lessonDetail),
                 onLessonChanged: (lesson) =>

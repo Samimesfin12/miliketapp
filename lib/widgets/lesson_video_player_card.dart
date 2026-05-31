@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:esl_learning_flutter/backend/services/video_downloader.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 
@@ -45,6 +46,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard> {
 
   bool _initialized = false;
   bool _error = false;
+  String? _errorMessage;
   bool _progressReported = false;
 
   bool _controlsVisible = true;
@@ -72,37 +74,64 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard> {
 
   VideoPlayerController _controllerForRemoteOrSample() {
     final u = widget.lesson.videoUrl?.trim();
-    if (u != null &&
-        u.isNotEmpty &&
-        (u.startsWith('http://') || u.startsWith('https://'))) {
-      return VideoPlayerController.networkUrl(Uri.parse(u));
+    if (u != null && u.isNotEmpty) {
+      final driveId = VideoDownloader.parseDriveFileId(u);
+      if (driveId != null) {
+        final driveUrl = VideoDownloader.driveDirectUrl(driveId);
+        return VideoPlayerController.networkUrl(
+          Uri.parse(driveUrl),
+          httpHeaders: const {
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          },
+        );
+      }
+      if (u.startsWith('http://') || u.startsWith('https://')) {
+        return VideoPlayerController.networkUrl(
+          Uri.parse(u),
+          httpHeaders: const {
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          },
+        );
+      }
     }
     return VideoPlayerController.networkUrl(
       sampleStreamUriForLesson(widget.lesson),
+      httpHeaders: const {
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      },
     );
   }
 
   Future<void> _initPlayer() async {
     setState(() {
       _error = false;
+      _errorMessage = null;
       _initialized = false;
     });
     VideoPlayerController c;
+    String? videoSourceDebugInfo;
     final local = widget.lesson.videoLocalPath?.trim();
     if (local != null && local.isNotEmpty) {
       final f = File(local);
       if (await f.exists()) {
         c = VideoPlayerController.file(f);
+        videoSourceDebugInfo = 'Local file: ${f.path}';
       } else {
         c = _controllerForRemoteOrSample();
+        videoSourceDebugInfo = 'Remote/Sample URL (local file not found): ${c.dataSource}';
       }
     } else {
       c = _controllerForRemoteOrSample();
+      videoSourceDebugInfo = 'Remote/Sample URL (no local file specified): ${c.dataSource}';
     }
     _controller?.removeListener(_onVideoUpdate);
     await _controller?.dispose();
     _controller = null;
     try {
+      debugPrint('Initializing video player with source: $videoSourceDebugInfo');
       await c.initialize();
       await c.setLooping(true);
       c.addListener(_onVideoUpdate);
@@ -113,12 +142,15 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard> {
       if (!mounted) return;
       setState(() => _initialized = true);
       _scheduleHideControls();
-    } catch (_) {
+      debugPrint('Video player initialized successfully with source: $videoSourceDebugInfo');
+    } catch (e, st) {
+      debugPrint('Video Player initialization failed for source: $videoSourceDebugInfo, Error: $e\n$st');
       await c.dispose();
       if (!mounted) return;
       setState(() {
         _controller = null;
         _error = true;
+        _errorMessage = e.toString();
       });
     }
   }
@@ -462,6 +494,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard> {
   Widget _errorPlaceholder(double height, double r) {
     return Container(
       height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A2A),
         borderRadius: BorderRadius.circular(r),
@@ -471,9 +504,10 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard> {
         children: [
           Text(widget.lesson.thumbnail, style: const TextStyle(fontSize: 56)),
           const SizedBox(height: 12),
-          const Text(
-            'Could not load video',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          Text(
+            _errorMessage != null ? 'Could not load video:\n$_errorMessage' : 'Could not load video',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
           ),
           const SizedBox(height: 12),
           FilledButton.icon(

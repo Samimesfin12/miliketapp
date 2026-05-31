@@ -60,6 +60,7 @@ const lessonsByCategory = {
       sign: 'Hello',
       signAm: 'ሰላም',
       thumbnail: '👋',
+      videoUrl: 'drive:1wQoueUDZVv_HBqmmcOmSIST3GqPtW9td',
     ),
     LessonItem(
       id: 'g2',
@@ -67,6 +68,7 @@ const lessonsByCategory = {
       sign: 'Good morning',
       signAm: 'እንደምን አደሩ',
       thumbnail: '🌅',
+      videoUrl: 'drive:1wQoueUDZVv_HBqmmcOmSIST3GqPtW9td',
     ),
     LessonItem(
       id: 'g3',
