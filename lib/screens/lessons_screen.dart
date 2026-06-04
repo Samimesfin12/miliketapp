@@ -184,7 +184,7 @@ class LessonsScreen extends StatelessWidget {
               crossAxisCount: 2,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              childAspectRatio: 0.82,
+              childAspectRatio: 1.15,
             ),
             itemBuilder: (context, i) {
               final c = categories[i];
@@ -205,7 +205,7 @@ class LessonsScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFFE7E7E7)),
                   ),
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,40 +223,40 @@ class LessonsScreen extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 4),
                             Row(
                               children: [
                                 Icon(
                                   labelIcon,
                                   color: _accentForCategory(c.id),
-                                  size: 28,
+                                  size: 24,
                                 ),
                                 const Spacer(),
                                 Text(
                                   progressLabel,
                                   style: const TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 13,
                                     color: Colors.black54,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 6),
                             Text(
                               showTitle,
                               style: const TextStyle(
-                                fontSize: 18,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 2),
                             Text(
                               _descriptionForCategory(c.id),
-                              maxLines: 2,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 12,
+                                fontSize: 11,
                                 color: Colors.black54,
                                 height: 1.2,
                               ),
@@ -271,27 +271,27 @@ class LessonsScreen extends StatelessWidget {
                           const Text(
                             'Progress',
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: 11,
                               color: Colors.black54,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 1),
                           Align(
                             alignment: Alignment.centerRight,
                             child: Text(
                               '${((list.isEmpty ? 0 : completedCount / list.length) * 100).round()}%',
                               style: const TextStyle(
-                                fontSize: 12,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 2),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(10),
                             child: LinearProgressIndicator(
-                              minHeight: 6,
+                              minHeight: 4,
                               value: list.isEmpty
                                   ? 0.0
                                   : completedCount / list.length,
@@ -301,7 +301,7 @@ class LessonsScreen extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 4),
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
@@ -310,14 +310,15 @@ class LessonsScreen extends StatelessWidget {
                                 backgroundColor: kPrimary,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
-                                minimumSize: const Size.fromHeight(38),
+                                minimumSize: const Size.fromHeight(30),
+                                padding: EdgeInsets.zero,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(6),
                                 ),
                               ),
                               child: const Text(
-                                'Start Learning',
-                                style: TextStyle(fontWeight: FontWeight.w700),
+                                'Learn',
+                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
                               ),
                             ),
                           ),

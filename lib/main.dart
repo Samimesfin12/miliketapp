@@ -24,6 +24,12 @@ import 'package:esl_learning_flutter/screens/quiz_screen.dart';
 import 'package:esl_learning_flutter/screens/ai_practice_screen.dart';
 import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
 
+const bool _debugMode = false; // Set to true for verbose logging
+
+void _log(String message) {
+  if (_debugMode) debugPrint(message);
+}
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
@@ -91,10 +97,10 @@ class _RootAppState extends ConsumerState<RootApp> {
           ref.read(authSessionProvider.notifier).bootstrap(),
         ]).timeout(const Duration(seconds: 10));
       } on TimeoutException {
-        debugPrint('Auth bootstrap timeout');
+        _log('Auth bootstrap timeout');
       }
-    } catch (e, st) {
-      debugPrint('Auth bootstrap error: $e\n$st');
+    } catch (e) {
+      _log('Auth bootstrap error: $e');
     }
 
     try {
@@ -125,8 +131,8 @@ class _RootAppState extends ConsumerState<RootApp> {
         showSplash = false;
         showOnboarding = auth.isAuthenticated && !hasSeenOnboarding;
       });
-    } catch (e, st) {
-      debugPrint('Boot sequence error: $e\n$st');
+    } catch (e) {
+      _log('Boot sequence error: $e');
       if (!mounted) return;
       setState(() {
         showSplash = false;
@@ -148,7 +154,7 @@ class _RootAppState extends ConsumerState<RootApp> {
         try {
           await progressRepo.markLessonCompleted(userId, id);
         } catch (e) {
-          debugPrint('Error marking lesson $id completed: $e');
+          _log('Error marking lesson $id completed: $e');
         }
       }
       if (fromPrefs.isNotEmpty) {
@@ -169,8 +175,8 @@ class _RootAppState extends ConsumerState<RootApp> {
         dayStreak: streak,
         totalPracticed: totalHours,
       );
-    } catch (e, st) {
-      debugPrint('Error hydrating progress for user $userId: $e\n$st');
+    } catch (e) {
+      _log('Error hydrating progress for user $userId: $e');
     }
   }
 
@@ -275,8 +281,8 @@ class _RootAppState extends ConsumerState<RootApp> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Video saved for offline playback.')),
       );
-    } catch (e, st) {
-      debugPrint('Drive download failed: $e\n$st');
+    } catch (e) {
+      _log('Video download failed: $e');
       if (!mounted) return;
       setState(() {
         videoDownloadBusy = false;

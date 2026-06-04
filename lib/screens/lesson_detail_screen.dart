@@ -299,13 +299,18 @@ class _LessonTile extends StatelessWidget {
                       : const Color(0xFFDDF7E7),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  isLocked ? Icons.lock_outline : Icons.waving_hand_outlined,
-                  size: 20,
-                  color: isLocked
-                      ? const Color(0xFF8D8D8D)
-                      : const Color(0xFF15824C),
-                ),
+                child: isLocked
+                    ? Icon(
+                        Icons.lock_outline,
+                        size: 20,
+                        color: const Color(0xFF8D8D8D),
+                      )
+                    : Center(
+                        child: Text(
+                          lesson.thumbnail,
+                          style: const TextStyle(fontSize: 20),
+                        ),
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(

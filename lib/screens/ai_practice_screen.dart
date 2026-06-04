@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
@@ -31,10 +30,6 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
   
   // App Templates & State
   bool _hasTemplate = false;
-  bool _isRecordingTemplate = false;
-  int _countdown = 0;
-  Timer? _countdownTimer;
-  final List<List<double>> _recordedTemplateFrames = [];
 
   // Real-time evaluation outcomes
   double _confidence = 0.0;
@@ -63,8 +58,8 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
             _feedback = ["Hold your hand in camera view to practice."];
           } else {
             _feedback = [
-              "Sign is not trained yet.",
-              "Tap 'Teach Sign' below, hold the gesture, and wait for the 3s recording count."
+              "Practice sign is not trained yet.",
+              "Please train this sign externally and save its coordinate template into the database."
             ];
           }
         });
@@ -113,9 +108,20 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
       });
 
       // 3. Hook into Camera Frame Stream
+      DateTime lastProcessedTime = DateTime.now();
+
       _cameraController!.startImageStream((CameraImage image) async {
+        final now = DateTime.now();
+        
+        // Throttling Logic:
+        // - Throttle to 120ms (~8 FPS) to save CPU/GPU and prevent native crashes.
+        if (now.difference(lastProcessedTime).inMilliseconds < 120) {
+          return;
+        }
+
         if (_isProcessing) return;
         _isProcessing = true;
+        lastProcessedTime = now;
 
         try {
           // Process current frame coordinates
@@ -124,22 +130,7 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
           if (flatCoords != null) {
             _emptyFrameCount = 0; // Hand detected! Reset grace counter
             
-            if (_isRecordingTemplate) {
-              // Teach/Creator Mode: capture sequence
-              _recordedTemplateFrames.add(flatCoords);
-              if (mounted) {
-                setState(() {
-                  _feedback = [
-                    "Recording gesture template...",
-                    "Frames: ${_recordedTemplateFrames.length} / 30"
-                  ];
-                });
-              }
-              
-              if (_recordedTemplateFrames.length >= 30) {
-                await _saveTemplate();
-              }
-            } else if (_hasTemplate) {
+            if (_hasTemplate) {
               // Practice Mode: run on-device evaluation
               final controller = ref.read(aiPracticeControllerProvider);
               final result = await controller.processFrame(flatCoords, widget.lesson.sign);
@@ -176,7 +167,7 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
             
             // Only clear active match and buffer if hand is missing for 15+ consecutive frames
             if (_emptyFrameCount >= 15) {
-              if (mounted && !_isRecordingTemplate) {
+              if (mounted) {
                 setState(() {
                   _confidence = 0.0;
                   _isCorrect = false;
@@ -245,62 +236,7 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
     );
   }
 
-  void _startTeachCountdown() {
-    _cameraController?.pausePreview(); // Temporarily pause to let user prepare
-    setState(() {
-      _countdown = 3;
-      _recordedTemplateFrames.clear();
-      _isRecordingTemplate = false;
-    });
-    SystemSound.play(SystemSoundType.click);
-
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      
-      setState(() {
-        if (_countdown > 1) {
-          _countdown--;
-          SystemSound.play(SystemSoundType.click);
-        } else {
-          timer.cancel();
-          _countdown = 0;
-          _isRecordingTemplate = true;
-          _cameraController?.resumePreview();
-          SystemSound.play(SystemSoundType.click); // Final chime sound
-        }
-      });
-    });
-  }
-
-  Future<void> _saveTemplate() async {
-    _isRecordingTemplate = false;
-    
-    final controller = ref.read(aiPracticeControllerProvider);
-    final success = await controller.recordTemplateFromSequence(
-      _recordedTemplateFrames, 
-      widget.lesson.sign
-    );
-    
-    if (mounted) {
-      setState(() {
-        _hasTemplate = success;
-        _recordedTemplateFrames.clear();
-        if (success) {
-          _feedback = ["Sign template saved successfully!", "You can now begin practicing."];
-          _confidence = 0.0;
-          _isCorrect = false;
-        } else {
-          _feedback = ["Failed to save template. Please try recording again."];
-        }
-      });
-    }
-  }
-
   void _stopAndRelease() {
-    _countdownTimer?.cancel();
     _cameraController?.dispose();
     MediaPipeProcessor.dispose(); // Add this line
     try {
@@ -311,7 +247,6 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
 
   @override
   void dispose() {
-    _countdownTimer?.cancel();
     _cameraController?.dispose();
     MediaPipeProcessor.dispose(); // Add this line
     try {
@@ -421,22 +356,6 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
                     ),
                   ),
                 ),
-                
-                // Big Countdown Overlay
-                if (_countdown > 0)
-                  Container(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    child: Center(
-                      child: Text(
-                        '$_countdown',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 80,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -447,20 +366,6 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
             color: Colors.grey[850],
             child: Row(
               children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _countdown > 0 || _isRecordingTemplate ? null : _startTeachCountdown,
-                    icon: const Icon(Icons.psychology_alt, color: Colors.white),
-                    label: Text(_hasTemplate ? 'Reteach Sign' : 'Teach Sign'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.purple[700],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _stopAndRelease, // Release resources and return Home
@@ -482,151 +387,199 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
           Expanded(
             flex: 2,
             child: Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               color: Colors.grey[900],
-              child: Column(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Pose Similarity:',
-                        style: TextStyle(color: Colors.white70, fontSize: 16),
-                      ),
-                      Text(
-                        _hasTemplate ? '${_confidence.toStringAsFixed(0)}%' : 'N/A',
-                        style: TextStyle(
-                          color: !_hasTemplate
-                              ? Colors.grey
-                              : _confidence >= 75
-                                  ? Colors.green
-                                  : Colors.amber,
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  const Divider(color: Colors.white24, height: 1),
-                  const SizedBox(height: 12),
-                  
-                  // Premium Real-time Evaluation Alert Cards
-                  if (_hasTemplate && _isCorrect)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.15),
-                        border: Border.all(color: Colors.green, width: 1.5),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 24),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "CORRECT SIGN DETECTED!",
-                                  style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 14),
-                                ),
-                                Text(
-                                  "Excellent form! Your hand matches the trained template.",
-                                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                  if (_hasTemplate && !_isCorrect && _confidence > 0)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.15),
-                        border: Border.all(color: Colors.amber, width: 1.5),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.info, color: Colors.amber, size: 24),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "GESTURE MISMATCH (Below 75%)",
-                                  style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
-                                ),
-                                Text(
-                                  "Your hand pose is similar but not close enough. Adjust using the guidelines below.",
-                                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  const Text(
-                    'Practice Guidelines:',
-                    style: TextStyle(
-                      color: Colors.white, 
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  // Left side: Gauge & Badge (Evaluation Result)
                   Expanded(
-                    child: ListView.builder(
-                      itemCount: _feedback.length,
-                      itemBuilder: (context, index) {
-                        final item = _feedback[index];
-                        final isSuccess = item.contains("Excellent") || item.contains("saved") || item.contains("Correct") || item.contains("Perfect");
-                        final isAlert = item.contains("not trained") || item.contains("Analysing") || item.contains("No hand");
-                        
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                isSuccess 
-                                    ? Icons.check_circle 
-                                    : isAlert 
-                                        ? Icons.info 
-                                        : Icons.arrow_right_alt,
-                                color: isSuccess 
-                                    ? Colors.green 
-                                    : isAlert 
-                                        ? Colors.amber 
-                                        : Colors.cyanAccent,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  item,
-                                  style: const TextStyle(
-                                    color: Colors.white, 
-                                    fontSize: 14,
-                                    height: 1.3
+                    flex: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[850],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white12, width: 1),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            "EVALUATION RESULT",
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Custom Radial Gauge mimicking index.html
+                          SizedBox(
+                            height: 70,
+                            width: 70,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: _confidence / 100.0,
+                                  strokeWidth: 6,
+                                  backgroundColor: Colors.white10,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    !_hasTemplate
+                                        ? Colors.grey
+                                        : _confidence >= 75
+                                            ? Colors.green
+                                            : Colors.amber,
                                   ),
                                 ),
-                              ),
-                            ],
+                                Text(
+                                  _hasTemplate ? '${_confidence.toStringAsFixed(0)}%' : '0%',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        );
-                      },
+                          const SizedBox(height: 6),
+                          const Text(
+                            "Match Confidence",
+                            style: TextStyle(color: Colors.white54, fontSize: 9),
+                          ),
+                          const SizedBox(height: 10),
+                          // Badge mimicking web evaluation indicator
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: !_hasTemplate
+                                  ? Colors.grey.withValues(alpha: 0.15)
+                                  : _isCorrect
+                                      ? Colors.green.withValues(alpha: 0.15)
+                                      : Colors.amber.withValues(alpha: 0.15),
+                              border: Border.all(
+                                color: !_hasTemplate
+                                    ? Colors.grey
+                                    : _isCorrect
+                                        ? Colors.green
+                                        : Colors.amber,
+                                width: 1.5,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  !_hasTemplate
+                                      ? Icons.help_outline
+                                      : _isCorrect
+                                          ? Icons.check_circle
+                                          : Icons.info_outline,
+                                  color: !_hasTemplate
+                                      ? Colors.grey
+                                      : _isCorrect
+                                          ? Colors.green
+                                          : Colors.amber,
+                                  size: 13,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  !_hasTemplate
+                                      ? "INCOMPLETE"
+                                      : _isCorrect
+                                          ? "CORRECT"
+                                          : "INCORRECT",
+                                  style: TextStyle(
+                                    color: !_hasTemplate
+                                        ? Colors.grey
+                                        : _isCorrect
+                                            ? Colors.green
+                                            : Colors.amber,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 9,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  
+                  // Right side: Diagnostic Feedback (Guidelines)
+                  Expanded(
+                    flex: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[850],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white12, width: 1),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'DIAGNOSTIC FEEDBACK',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: ListView.builder(
+                              itemCount: _feedback.length,
+                              itemBuilder: (context, index) {
+                                final item = _feedback[index];
+                                final isSuccess = item.contains("Excellent") || item.contains("saved") || item.contains("Correct") || item.contains("Perfect");
+                                final isAlert = item.contains("not trained") || item.contains("Analysing") || item.contains("No hand") || item.contains("Keep");
+                                
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        isSuccess 
+                                            ? Icons.check_circle 
+                                            : isAlert 
+                                                ? Icons.info 
+                                                : Icons.arrow_right_alt,
+                                        color: isSuccess 
+                                            ? Colors.green 
+                                            : isAlert 
+                                                ? Colors.amber 
+                                                : Colors.cyanAccent,
+                                        size: 15,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          item,
+                                          style: const TextStyle(
+                                            color: Colors.white, 
+                                            fontSize: 12,
+                                            height: 1.3
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],

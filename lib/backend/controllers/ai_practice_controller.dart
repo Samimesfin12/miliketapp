@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:esl_learning_flutter/backend/ai/mediapipe_processor.dart';
 import 'package:esl_learning_flutter/backend/ai/tflite_classifier.dart';
@@ -21,11 +20,16 @@ final class AIPracticeController {
   /// Preloads target sign template to avoid database queries on every frame
   Future<void> preloadTemplate(String targetSign) async {
     final normalizedSignId = targetSign.toLowerCase().trim();
-    if (_cachedSignId == normalizedSignId && _cachedTemplate != null) {
-      return; // Already cached in memory
+    if (_cachedSignId == normalizedSignId) {
+      return; // Already queried/cached
     }
     _cachedSignId = normalizedSignId;
-    _cachedTemplate = await _sqliteHelper.getSignTemplate(normalizedSignId);
+    final rawTemplate = await _sqliteHelper.getSignTemplate(normalizedSignId);
+    if (rawTemplate != null) {
+      _cachedTemplate = PoseMatcher.normalizeHand(rawTemplate);
+    } else {
+      _cachedTemplate = null;
+    }
   }
 
   /// Evaluates hand coordinate landmarks against the target sign locally.
@@ -45,19 +49,19 @@ final class AIPracticeController {
     // 2. Normalize user landmarks frame-by-frame
     final normalizedFrame = PoseMatcher.normalizeHand(frameLandmarks);
     slidingBuffer.add(normalizedFrame);
-    if (slidingBuffer.length > 10) {
+    if (slidingBuffer.length > 5) {
       slidingBuffer.removeAt(0);
     }
 
-    if (slidingBuffer.length == 10) {
-      // 3. Average the user coordinates in the sliding buffer (10 frames for fast responsiveness)
+    if (slidingBuffer.length == 5) {
+      // 3. Average the user coordinates in the sliding buffer (5 frames for fast responsiveness)
       final userAvgPose = List<double>.filled(63, 0.0);
       for (int i = 0; i < 63; i++) {
         double sum = 0.0;
-        for (int f = 0; f < 10; f++) {
+        for (int f = 0; f < 5; f++) {
           sum += slidingBuffer[f][i];
         }
-        userAvgPose[i] = sum / 10.0;
+        userAvgPose[i] = sum / 5.0;
       }
 
       // 4. Match averaged user pose with local database template
@@ -77,36 +81,7 @@ final class AIPracticeController {
     }
   }
 
-  /// Takes the average of captured sequence, normalizes it, and saves as template
-  Future<bool> recordTemplateFromSequence(List<List<double>> rawSequence, String signId) async {
-    if (rawSequence.isEmpty) return false;
-    
-    // 1. Normalize each frame in sequence
-    final normalizedSequence = rawSequence.map((frame) => PoseMatcher.normalizeHand(frame)).toList();
-    
-    // 2. Average landmarks across sequence
-    final avgPose = List<double>.filled(63, 0.0);
-    for (int i = 0; i < 63; i++) {
-      double sum = 0.0;
-      for (int f = 0; f < normalizedSequence.length; f++) {
-        sum += normalizedSequence[f][i];
-      }
-      avgPose[i] = sum / normalizedSequence.length.toDouble();
-    }
-    
-    // 3. Save template to database
-    try {
-      await _sqliteHelper.saveSignTemplate(signId, avgPose);
-      
-      // Update memory cache instantly
-      _cachedSignId = signId.toLowerCase().trim();
-      _cachedTemplate = avgPose;
-      return true;
-    } catch (e) {
-      debugPrint("Database save error: $e");
-      return false;
-    }
-  }
+
 
   /// Saves an evaluation result to the SQLite ai_feedback table
   Future<void> saveFeedback({
