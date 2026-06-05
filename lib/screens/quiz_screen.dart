@@ -197,10 +197,12 @@ class _QuizScreenState extends State<QuizScreen> {
                     onPressed: selectedOption == null
                         ? null
                         : () {
-                            final questions = quizByCategory[widget.categoryId] ??
+                            final questions =
+                                quizByCategory[widget.categoryId] ??
                                 quizByCategory['greetings']!;
                             final newScore =
-                                score + (selectedOption == q.correctAnswer ? 1 : 0);
+                                score +
+                                (selectedOption == q.correctAnswer ? 1 : 0);
                             final nextIndex = index + 1;
                             setState(() {
                               if (selectedOption == q.correctAnswer) {

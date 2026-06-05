@@ -94,7 +94,7 @@ class _VideoScreenState extends State<VideoScreen> {
                     icon: const Icon(
                       Icons.arrow_back,
                       color: Colors.white,
-                      size: 28,
+                      size: 24,
                     ),
                   ),
                   Expanded(
@@ -104,7 +104,7 @@ class _VideoScreenState extends State<VideoScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -115,7 +115,7 @@ class _VideoScreenState extends State<VideoScreen> {
           ),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
               children: [
                 LessonVideoPlayerCard(
                   lesson: widget.lesson,
@@ -129,7 +129,8 @@ class _VideoScreenState extends State<VideoScreen> {
                   Builder(
                     builder: (context) {
                       final localPath = widget.lesson.videoLocalPath;
-                      final isDownloaded = localPath != null &&
+                      final isDownloaded =
+                          localPath != null &&
                           localPath.isNotEmpty &&
                           File(localPath).existsSync();
 
@@ -178,7 +179,7 @@ class _VideoScreenState extends State<VideoScreen> {
                     ),
                   ],
                 ],
-                const SizedBox(height: 30),
+                const SizedBox(height: 24),
                 Center(
                   child: RichText(
                     text: TextSpan(
@@ -187,7 +188,7 @@ class _VideoScreenState extends State<VideoScreen> {
                           text: '$title ',
                           style: const TextStyle(
                             color: Colors.black,
-                            fontSize: 28,
+                            fontSize: 22,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -195,7 +196,7 @@ class _VideoScreenState extends State<VideoScreen> {
                           text: subtitle,
                           style: const TextStyle(
                             color: Color(0xFF6E6D3F),
-                            fontSize: 21,
+                            fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -203,12 +204,12 @@ class _VideoScreenState extends State<VideoScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 Center(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 6,
+                      horizontal: 14,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFDDEFC0),
@@ -219,13 +220,14 @@ class _VideoScreenState extends State<VideoScreen> {
                       style: const TextStyle(
                         color: Color(0xFF5C6A39),
                         fontWeight: FontWeight.w600,
+                        fontSize: 12,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 42),
+                const SizedBox(height: 32),
                 SizedBox(
-                  height: 84,
+                  height: 72,
                   child: ElevatedButton(
                     onPressed: widget.onStartQuiz,
                     style: ElevatedButton.styleFrom(
@@ -233,7 +235,7 @@ class _VideoScreenState extends State<VideoScreen> {
                       foregroundColor: Colors.black,
                       elevation: 2,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                     child: const Row(
@@ -242,12 +244,12 @@ class _VideoScreenState extends State<VideoScreen> {
                         Text(
                           'Practice Quiz',
                           style: TextStyle(
-                            fontSize: 22,
+                            fontSize: 18,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Icon(Icons.quiz_outlined, size: 24),
+                        SizedBox(width: 6),
+                        Icon(Icons.quiz_outlined, size: 20),
                       ],
                     ),
                   ),
@@ -267,13 +269,13 @@ class _VideoScreenState extends State<VideoScreen> {
                               child: OutlinedButton.icon(
                                 onPressed: canPrev ? _goPrevious : null,
                                 style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(70),
+                                  minimumSize: const Size.fromHeight(60),
                                   side: const BorderSide(
                                     color: Color(0xFFD2CED9),
                                     width: 2,
                                   ),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
                                 icon: const Icon(
@@ -284,24 +286,24 @@ class _VideoScreenState extends State<VideoScreen> {
                                   'Previous',
                                   style: TextStyle(
                                     color: Colors.black,
-                                    fontSize: 16,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 18),
+                            const SizedBox(width: 16),
                             Expanded(
                               child: FilledButton(
                                 onPressed: canNext ? _goNext : null,
                                 style: FilledButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(70),
+                                  minimumSize: const Size.fromHeight(60),
                                   backgroundColor: kPrimaryDark,
                                   disabledBackgroundColor: const Color(
                                     0xFFB8C4BE,
                                   ),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
                                 child: const Row(
@@ -310,31 +312,32 @@ class _VideoScreenState extends State<VideoScreen> {
                                     Text(
                                       'Next',
                                       style: TextStyle(
-                                        fontSize: 16,
+                                        fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    SizedBox(width: 6),
-                                    Icon(Icons.chevron_right),
+                                    SizedBox(width: 4),
+                                    Icon(Icons.chevron_right, size: 20),
                                   ],
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         TextButton.icon(
                           onPressed: widget.onStartAI,
                           icon: const Icon(
                             Icons.videocam_outlined,
                             color: kPrimaryDark,
+                            size: 18,
                           ),
                           label: const Text(
                             'AI Practice',
                             style: TextStyle(
                               color: kPrimaryDark,
                               fontWeight: FontWeight.w700,
-                              fontSize: 15,
+                              fontSize: 13,
                             ),
                           ),
                         ),
@@ -342,16 +345,16 @@ class _VideoScreenState extends State<VideoScreen> {
                     );
                   },
                 ),
-                const SizedBox(height: 138),
+                const SizedBox(height: 100),
                 if (_watched)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 18,
+                      horizontal: 14,
+                      vertical: 14,
                     ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFD7EDB8),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(14),
                       boxShadow: const [
                         BoxShadow(
                           color: Color(0x22000000),
@@ -363,27 +366,27 @@ class _VideoScreenState extends State<VideoScreen> {
                     child: const Row(
                       children: [
                         CircleAvatar(
-                          radius: 16,
+                          radius: 14,
                           backgroundColor: Color(0xFF506240),
                           child: Icon(
                             Icons.check,
                             color: Colors.white,
-                            size: 18,
+                            size: 16,
                           ),
                         ),
-                        SizedBox(width: 14),
+                        SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             'Sign learned! +1 to your\nprogress',
                             style: TextStyle(
                               color: Color(0xFF58624A),
-                              fontSize: 16,
+                              fontSize: 14,
                               fontWeight: FontWeight.w700,
                               height: 1.2,
                             ),
                           ),
                         ),
-                        Icon(Icons.close, color: Color(0xFF58624A), size: 28),
+                        Icon(Icons.close, color: Color(0xFF58624A), size: 24),
                       ],
                     ),
                   ),

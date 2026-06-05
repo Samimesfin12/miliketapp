@@ -22,7 +22,7 @@ import 'package:esl_learning_flutter/screens/dictionary_screen.dart';
 import 'package:esl_learning_flutter/screens/profile_screen.dart';
 import 'package:esl_learning_flutter/screens/quiz_screen.dart';
 import 'package:esl_learning_flutter/screens/ai_practice_screen.dart';
-import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
+import 'package:esl_learning_flutter/screens/drawer_info_screen.dart';
 
 const bool _debugMode = false; // Set to true for verbose logging
 
@@ -32,11 +32,7 @@ void _log(String message) {
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(
-    const ProviderScope(
-      child: EthSLApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: EthSLApp()));
 }
 
 class EthSLApp extends StatelessWidget {
@@ -194,15 +190,13 @@ class _RootAppState extends ConsumerState<RootApp> {
 
   Future<void> _markLessonLearnedOnAccount(int userId, String lessonId) async {
     if (!completedLessons.add(lessonId)) return;
-    await ref.read(progressRepositoryProvider).markLessonCompleted(
-          userId,
-          lessonId,
-        );
+    await ref
+        .read(progressRepositoryProvider)
+        .markLessonCompleted(userId, lessonId);
     signsLearned = countCompletedInCurriculum(completedLessons);
-    await ref.read(userRepositoryProvider).updateCounters(
-      userId: userId,
-      signsLearned: signsLearned,
-    );
+    await ref
+        .read(userRepositoryProvider)
+        .updateCounters(userId: userId, signsLearned: signsLearned);
     await persist();
     if (mounted) setState(() {});
   }
@@ -234,7 +228,9 @@ class _RootAppState extends ConsumerState<RootApp> {
     final merged = await _lessonWithDbMedia(lesson);
     if (!mounted) return;
     setState(() {
-      selectedCategory = categories.firstWhere((c) => c.id == lesson.categoryId);
+      selectedCategory = categories.firstWhere(
+        (c) => c.id == lesson.categoryId,
+      );
       selectedLesson = merged;
       overlay = AppOverlay.video;
     });
@@ -249,8 +245,20 @@ class _RootAppState extends ConsumerState<RootApp> {
   Future<void> _downloadLessonVideo() async {
     final lesson = selectedLesson;
     if (lesson == null) return;
-    final downloadUrl = lesson.videoUrl?.trim() ?? sampleStreamUriForLesson(lesson).toString();
-    if (downloadUrl.isEmpty) return;
+    final downloadUrl = lesson.videoUrl?.trim();
+    if (downloadUrl == null || downloadUrl.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            language == 'en'
+                ? 'No video URL for this sign yet.'
+                : 'ለዚህ ምልክት ቪዲዮ አልተገኘም።',
+          ),
+        ),
+      );
+      return;
+    }
 
     _videoDownloadCancel?.cancel();
     _videoDownloadCancel = CancelToken();
@@ -261,7 +269,9 @@ class _RootAppState extends ConsumerState<RootApp> {
     try {
       final dir = await getApplicationSupportDirectory();
       final dest = VideoDownloader.defaultLessonVideoPath(dir, lesson.id);
-      await ref.read(videoDownloaderProvider).downloadVideoToFile(
+      await ref
+          .read(videoDownloaderProvider)
+          .downloadVideoToFile(
             urlOrFileId: downloadUrl,
             destinationPath: dest,
             cancelToken: _videoDownloadCancel,
@@ -270,7 +280,9 @@ class _RootAppState extends ConsumerState<RootApp> {
               setState(() => videoDownloadProgress = received / total);
             },
           );
-      await ref.read(lessonRepositoryProvider).setLocalVideoPath(lesson.id, dest);
+      await ref
+          .read(lessonRepositoryProvider)
+          .setLocalVideoPath(lesson.id, dest);
       final merged = lesson.copyWith(videoLocalPath: dest);
       if (!mounted) return;
       setState(() {
@@ -288,9 +300,9 @@ class _RootAppState extends ConsumerState<RootApp> {
         videoDownloadBusy = false;
         videoDownloadProgress = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Download failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Download failed: $e')));
     }
   }
 
@@ -301,7 +313,9 @@ class _RootAppState extends ConsumerState<RootApp> {
     await prefs.setString('userEmail', userEmail);
     final auth = ref.read(authSessionProvider);
     if (auth.isAuthenticated && auth.userId != null) {
-      await ref.read(userRepositoryProvider).updateCounters(
+      await ref
+          .read(userRepositoryProvider)
+          .updateCounters(
             userId: auth.userId!,
             signsLearned: signsLearned,
             dayStreak: streak,
@@ -414,7 +428,9 @@ class _RootAppState extends ConsumerState<RootApp> {
           onQuizComplete: (score, totalQuestions) async {
             final uid = auth.userId;
             if (uid == null) return;
-            await ref.read(quizRepositoryProvider).insertResult(
+            await ref
+                .read(quizRepositoryProvider)
+                .insertResult(
                   userId: uid,
                   categoryId: quizCategory,
                   score: score,
@@ -446,6 +462,13 @@ class _RootAppState extends ConsumerState<RootApp> {
               onOpenQuiz: (id) => setState(() {
                 quizCategory = id;
                 overlay = AppOverlay.quiz;
+              }),
+              onViewAll: () => setState(() {
+                current = AppScreen.lessons;
+              }),
+              onOpenLesson: (lesson) => setState(() {
+                selectedLesson = lesson;
+                overlay = AppOverlay.video;
               }),
             );
             break;
@@ -775,42 +798,37 @@ class _RootAppState extends ConsumerState<RootApp> {
                     _menuItem(
                       icon: Icons.help_outline,
                       title: 'Help',
-                      onTap: () => _showDrawerMessage('Help'),
+                      onTap: () => _openDrawerInfo(DrawerInfoPage.help),
                     ),
                     _menuItem(
                       icon: Icons.menu_book_outlined,
                       title: 'How to use',
-                      onTap: () => _showDrawerMessage('How to use'),
+                      onTap: () => _openDrawerInfo(DrawerInfoPage.howToUse),
                     ),
                     _menuItem(
                       icon: Icons.contact_support_outlined,
                       title: 'Contact ENAD',
-                      onTap: () => _showDrawerMessage('Contact ENAD'),
+                      onTap: () => _openDrawerInfo(DrawerInfoPage.contactEnad),
                     ),
                     _sectionTitle('ABOUT'),
                     _menuItem(
                       icon: Icons.info_outline,
                       title: 'App Info',
-                      onTap: () => _showDrawerMessage('App Info'),
+                      onTap: () => _openDrawerInfo(DrawerInfoPage.appInfo),
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.tag, color: kPrimaryDark),
-                      title: const Text(
-                        'Version',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: kOnSurface,
-                        ),
-                      ),
+                    _menuItem(
+                      icon: Icons.tag,
+                      title: 'Version',
                       trailing: const Text(
-                        '1.0.0',
+                        DrawerInfoScreen.appVersion,
                         style: TextStyle(color: kOnSurfaceVariant),
                       ),
+                      onTap: () => _openDrawerInfo(DrawerInfoPage.appInfo),
                     ),
                     _menuItem(
                       icon: Icons.stars_outlined,
                       title: 'Credits',
-                      onTap: () => _showDrawerMessage('Credits'),
+                      onTap: () => _openDrawerInfo(DrawerInfoPage.credits),
                     ),
                   ],
                 ),
@@ -853,6 +871,7 @@ class _RootAppState extends ConsumerState<RootApp> {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
+    Widget? trailing,
   }) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -865,11 +884,21 @@ class _RootAppState extends ConsumerState<RootApp> {
           fontSize: 15,
         ),
       ),
+      trailing: trailing,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       tileColor: kSurfaceContainerLow,
       horizontalTitleGap: 12,
       minLeadingWidth: 0,
       onTap: onTap,
+    );
+  }
+
+  void _openDrawerInfo(DrawerInfoPage page) {
+    Navigator.of(context).pop();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DrawerInfoScreen(page: page),
+      ),
     );
   }
 

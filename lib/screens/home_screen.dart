@@ -11,12 +11,16 @@ class HomeScreen extends StatelessWidget {
     required this.onOpenCategory,
     required this.onOpenQuiz,
     required this.onOpenMenu,
+    required this.onViewAll,
+    required this.onOpenLesson,
   });
   final String language;
   final Set<String> completedLessonIds;
   final ValueChanged<Category> onOpenCategory;
   final ValueChanged<String> onOpenQuiz;
   final VoidCallback onOpenMenu;
+  final VoidCallback onViewAll;
+  final ValueChanged<LessonItem> onOpenLesson;
 
   @override
   Widget build(BuildContext context) {
@@ -89,10 +93,10 @@ class HomeScreen extends StatelessWidget {
             const Text(
               'Miliketapp',
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 16,
                 fontWeight: FontWeight.w900,
                 color: kPrimaryDark,
-                letterSpacing: -0.8,
+                letterSpacing: -0.6,
               ),
             ),
             const Spacer(),
@@ -128,9 +132,9 @@ class HomeScreen extends StatelessWidget {
                   Text(
                     'Hello! 👋',
                     style: TextStyle(
-                      fontSize: 36,
+                      fontSize: 28,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: -1.2,
+                      letterSpacing: -0.9,
                       height: 0.92,
                     ),
                   ),
@@ -148,8 +152,8 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             SizedBox(
-              width: 72,
-              height: 72,
+              width: 60,
+              height: 60,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -164,7 +168,7 @@ class HomeScreen extends StatelessWidget {
                       '$progressPercent%',
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: 17,
+                        fontSize: 14,
                       ),
                     ),
                   ),
@@ -180,11 +184,17 @@ class HomeScreen extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         GestureDetector(
-          onTap: () => onOpenCategory(continueCategory),
+          onTap: () {
+            if (nextLesson != null) {
+              onOpenLesson(nextLesson);
+            } else {
+              onOpenCategory(continueCategory);
+            }
+          },
           child: Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(18),
               gradient: const LinearGradient(
                 colors: [kPrimary, kPrimaryDark],
                 begin: Alignment.topLeft,
@@ -217,9 +227,9 @@ class HomeScreen extends StatelessWidget {
                   'Continue Your Journey',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 28,
+                    fontSize: 20,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: -1.2,
+                    letterSpacing: -0.8,
                     height: 0.95,
                   ),
                 ),
@@ -230,9 +240,9 @@ class HomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Container(
-                  height: 52,
+                  height: 44,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                     color: Colors.white.withValues(alpha: 0.18),
                     border: Border.all(color: Colors.white.withValues(alpha: 0.32)),
                   ),
@@ -240,14 +250,14 @@ class HomeScreen extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.play_circle_fill, color: Colors.white70),
-                        SizedBox(width: 8),
+                        Icon(Icons.play_circle_fill, color: Colors.white70, size: 18),
+                        SizedBox(width: 6),
                         Text(
                           'Resume Now',
                           style: TextStyle(
                             color: Colors.white70,
                             fontWeight: FontWeight.w700,
-                            fontSize: 14,
+                            fontSize: 12,
                           ),
                         ),
                       ],
@@ -259,23 +269,26 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-        Row(
-          children: const [
-            Expanded(
-              child: Text(
-                'Quick Categories',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
+        GestureDetector(
+          onTap: onViewAll,
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Quick Categories',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.8,
+                  ),
                 ),
               ),
-            ),
-            Text(
-              'View All',
-              style: TextStyle(color: Colors.black54, fontSize: 16),
-            ),
-          ],
+              const Text(
+                'View All',
+                style: TextStyle(color: Colors.black54, fontSize: 13),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 10),
         GridView.builder(
@@ -294,34 +307,34 @@ class HomeScreen extends StatelessWidget {
               onTap: () => onOpenCategory(item.category),
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 10,
+                  horizontal: 8,
+                  vertical: 8,
                 ),
                 decoration: BoxDecoration(
                   color: index.isEven
                       ? const Color(0xFFF6F3F2)
                       : const Color(0xFFF0EDED),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: const Color(0xFFE5E2E1)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
-                      width: 42,
-                      height: 42,
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(11),
+                        borderRadius: BorderRadius.circular(9),
                       ),
                       alignment: Alignment.center,
-                      child: Icon(item.icon, size: 22, color: kPrimary),
+                      child: Icon(item.icon, size: 18, color: kPrimary),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       item.category.title,
                       style: const TextStyle(
-                        fontSize: 14,
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -354,9 +367,9 @@ class HomeScreen extends StatelessWidget {
             child: Row(
               children: const [
                 CircleAvatar(
-                  radius: 20,
+                  radius: 16,
                   backgroundColor: Color(0xFFF7D95E),
-                  child: Icon(Icons.light_mode_outlined, color: Colors.black87),
+                  child: Icon(Icons.light_mode_outlined, color: Colors.black87, size: 18),
                 ),
                 SizedBox(width: 10),
                 Expanded(
@@ -366,18 +379,18 @@ class HomeScreen extends StatelessWidget {
                       Text(
                         'Practice Quiz of the Day',
                         style: TextStyle(
-                          fontSize: 17,
+                          fontSize: 15,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                       Text(
                         'Test Your Daily Goals!',
-                        style: TextStyle(fontSize: 15),
+                        style: TextStyle(fontSize: 13),
                       ),
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right, size: 28),
+                Icon(Icons.chevron_right, size: 24),
               ],
             ),
           ),
@@ -386,9 +399,9 @@ class HomeScreen extends StatelessWidget {
         const Text(
           'Ethiopian Culture',
           style: TextStyle(
-            fontSize: 26,
+            fontSize: 20,
             fontWeight: FontWeight.w800,
-            letterSpacing: -1,
+            letterSpacing: -0.8,
           ),
         ),
         const SizedBox(height: 10),
@@ -408,10 +421,10 @@ class HomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                height: 200,
+                height: 160,
                 width: double.infinity,
                 decoration: const BoxDecoration(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                 ),
                 child: Stack(
                   fit: StackFit.expand,
@@ -486,7 +499,7 @@ class HomeScreen extends StatelessWidget {
                             'Coffee Ceremony & Injera',
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
-                              fontSize: 17,
+                              fontSize: 15,
                             ),
                           ),
                           SizedBox(height: 4),
@@ -519,14 +532,14 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 22),
+        Icon(icon, size: 20),
         const SizedBox(width: 6),
         Text(
           title,
           style: const TextStyle(
-            fontSize: 24,
+            fontSize: 18,
             fontWeight: FontWeight.w800,
-            letterSpacing: -0.9,
+            letterSpacing: -0.7,
           ),
         ),
       ],

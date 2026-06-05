@@ -184,7 +184,7 @@ class LessonsScreen extends StatelessWidget {
               crossAxisCount: 2,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              childAspectRatio: 1.15,
+              childAspectRatio: 0.92,
             ),
             itemBuilder: (context, i) {
               final c = categories[i];
@@ -205,124 +205,121 @@ class LessonsScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFFE7E7E7)),
                   ),
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: _accentForCategory(c.id),
-                                borderRadius: const BorderRadius.vertical(
-                                  bottom: Radius.circular(5),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Icon(
-                                  labelIcon,
-                                  color: _accentForCategory(c.id),
-                                  size: 24,
-                                ),
-                                const Spacer(),
-                                Text(
-                                  progressLabel,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.black54,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              showTitle,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _descriptionForCategory(c.id),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Colors.black54,
-                                height: 1.2,
-                              ),
-                            ),
-                          ],
+                      Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: _accentForCategory(c.id),
+                          borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(5),
+                          ),
                         ),
                       ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            labelIcon,
+                            color: _accentForCategory(c.id),
+                            size: 22,
+                          ),
+                          const Spacer(),
+                          Text(
+                            progressLabel,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.black54,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        showTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          height: 1.15,
+                        ),
+                      ),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: Text(
+                            _descriptionForCategory(c.id),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.black54,
+                              height: 1.2,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Row(
                         children: [
                           const Text(
                             'Progress',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 10,
                               color: Colors.black54,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: 1),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: Text(
-                              '${((list.isEmpty ? 0 : completedCount / list.length) * 100).round()}%',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: LinearProgressIndicator(
-                              minHeight: 4,
-                              value: list.isEmpty
-                                  ? 0.0
-                                  : completedCount / list.length,
-                              backgroundColor: const Color(0xFFF0F2F2),
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                Color(0xFFDBE7DE),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () => onOpenCategory(c),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: kPrimary,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                minimumSize: const Size.fromHeight(30),
-                                padding: EdgeInsets.zero,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                              ),
-                              child: const Text(
-                                'Learn',
-                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-                              ),
+                          const Spacer(),
+                          Text(
+                            '${((list.isEmpty ? 0 : completedCount / list.length) * 100).round()}%',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 3),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: LinearProgressIndicator(
+                          minHeight: 3,
+                          value: list.isEmpty
+                              ? 0.0
+                              : completedCount / list.length,
+                          backgroundColor: const Color(0xFFF0F2F2),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFFDBE7DE),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 28,
+                        child: ElevatedButton(
+                          onPressed: () => onOpenCategory(c),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: kPrimary,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          child: const Text(
+                            'Learn',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),

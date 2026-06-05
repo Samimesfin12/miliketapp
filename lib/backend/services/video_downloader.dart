@@ -49,7 +49,80 @@ final class VideoDownloader {
       if (m2 != null) return m2.group(1);
     }
 
+    // Bare file id stored without drive: prefix (e.g. family Father lesson).
+    if (!s.contains('://') &&
+        !s.contains('/') &&
+        RegExp(r'^[-\w]{10,}$').hasMatch(s)) {
+      return s;
+    }
+
     return null;
+  }
+
+  static String drivePlaybackCachePath(Directory cacheDir, String fileId) =>
+      p.join(cacheDir.path, 'drive_playback_cache', '$fileId.mp4');
+
+  /// True when [file] exists and is not an HTML error page from Drive.
+  static Future<bool> isValidVideoFile(File file) async {
+    if (!await file.exists()) return false;
+    final size = await file.length();
+    if (size < 512) return false;
+    final raf = await file.open();
+    try {
+      final head = await raf.read(12);
+      if (head.isEmpty) return false;
+      if (head[0] == 0x3C) return false;
+      if (head.length >= 8 &&
+          String.fromCharCodes(head.sublist(4, 8)) == 'ftyp') {
+        return true;
+      }
+      if (head.length >= 4 &&
+          head[0] == 0x1A &&
+          head[1] == 0x45 &&
+          head[2] == 0xDF &&
+          head[3] == 0xA3) {
+        return true;
+      }
+      return size > 10 * 1024;
+    } finally {
+      await raf.close();
+    }
+  }
+
+  /// Downloads Drive (or HTTPS) media into [cacheDir] and returns a local file path.
+  /// ExoPlayer cannot stream raw Drive links; caching avoids 403/HTML responses.
+  Future<ResolvedPlaybackSource> resolvePlaybackSource(
+    String urlOrFileId, {
+    required Directory cacheDir,
+    CancelToken? cancelToken,
+  }) async {
+    final trimmed = urlOrFileId.trim();
+    final driveId = parseDriveFileId(trimmed);
+    if (driveId != null) {
+      final cacheFile = File(drivePlaybackCachePath(cacheDir, driveId));
+      await cacheFile.parent.create(recursive: true);
+      if (!await isValidVideoFile(cacheFile)) {
+        if (await cacheFile.exists()) await cacheFile.delete();
+        await downloadDriveVideoToFile(
+          fileId: driveId,
+          destinationPath: cacheFile.path,
+          cancelToken: cancelToken,
+        );
+        if (!await isValidVideoFile(cacheFile)) {
+          throw StateError(
+            'Drive file $driveId did not download as video. '
+            'Share it as "Anyone with the link".',
+          );
+        }
+      }
+      return ResolvedPlaybackSource.file(cacheFile.path);
+    }
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return ResolvedPlaybackSource.network(trimmed);
+    }
+
+    throw ArgumentError('Unsupported video source: $urlOrFileId');
   }
 
   /// Downloads Drive [fileId] to [destinationPath] with streaming I/O and Range resume.
@@ -82,6 +155,13 @@ final class VideoDownloader {
       onProgress: onProgress,
       cancelToken: cancelToken,
     );
+    if (!await isValidVideoFile(dest)) {
+      await dest.delete();
+      throw StateError(
+        'Drive file $fileId did not download as video. '
+        'Share it as "Anyone with the link".',
+      );
+    }
   }
 
   /// Downloads a video (either a Google Drive ID/URL or a standard web URL) to the local file system.
@@ -144,6 +224,10 @@ final class VideoDownloader {
         followRedirects: true,
         maxRedirects: 8,
         validateStatus: (c) => c != null && c < 500,
+        headers: const {
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+        },
       ),
       cancelToken: cancelToken,
     );
@@ -164,36 +248,40 @@ final class VideoDownloader {
 
     final html = String.fromCharCodes(bytes);
     final userContent = RegExp(
-      r'"(https://drive\.usercontent\.google\.com/download[^"]+)"',
+      r'https://drive\.usercontent\.google\.com/download[^\s"<>]+',
       caseSensitive: false,
-    ).firstMatch(html)?.group(1);
+    ).firstMatch(html)?.group(0);
     if (userContent != null) {
-      return _StreamUrl(Uri.decodeFull(userContent.replaceAll('&amp;', '&')));
-    }
-
-    final confirm = _extractConfirmToken(html);
-    if (confirm == null || confirm.isEmpty) {
-      throw StateError(
-        'Could not parse Drive confirm token (virus-scan page). '
-        'Ensure the file is shared as "Anyone with the link" and the id is correct.',
+      return _StreamUrl(
+        Uri.decodeFull(userContent.replaceAll('&amp;', '&')),
       );
     }
 
-    final withConfirm = '$initial&confirm=$confirm';
-    return _StreamUrl(withConfirm);
+    final confirm = _extractConfirmToken(html);
+    if (confirm != null && confirm.isNotEmpty) {
+      return _StreamUrl('$initial&confirm=$confirm');
+    }
+
+    // Large-file workaround when Google omits a confirm input on the scan page.
+    return _StreamUrl('$initial&confirm=t');
   }
 
   static String? _extractConfirmToken(String html) {
-    final input = RegExp(
-      r'name="confirm"\s+value="([^"]+)"',
-      caseSensitive: false,
-    );
-    final m1 = input.firstMatch(html);
-    if (m1 != null) return m1.group(1);
-
-    final href = RegExp(r'confirm=([\w-]+)', caseSensitive: false);
-    final m2 = href.firstMatch(html);
-    if (m2 != null) return m2.group(1);
+    final patterns = <RegExp>[
+      RegExp(r'name="confirm"\s+value="([^"]+)"', caseSensitive: false),
+      RegExp(r'id="confirm"\s+value="([^"]+)"', caseSensitive: false),
+      RegExp(r'"confirm"\s*:\s*"([^"]+)"', caseSensitive: false),
+      RegExp(r'data-confirm="([^"]+)"', caseSensitive: false),
+      RegExp(
+        r'confirm=([0-9A-Za-z_\-]+)',
+        caseSensitive: false,
+      ),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(html);
+      final token = match?.group(1);
+      if (token != null && token.isNotEmpty && token != 't') return token;
+    }
     return null;
   }
 
@@ -204,7 +292,10 @@ final class VideoDownloader {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final headers = <String, dynamic>{};
+    final headers = <String, dynamic>{
+      'User-Agent':
+          'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+    };
     if (resumeFrom > 0) {
       headers['Range'] = 'bytes=$resumeFrom-';
     }
@@ -296,6 +387,20 @@ final class VideoDownloader {
     if (n == null) return null;
     return resumeFrom + n;
   }
+}
+
+/// Playback target after resolving Google Drive virus-scan / redirect pages.
+final class ResolvedPlaybackSource {
+  const ResolvedPlaybackSource._({this.networkUrl, this.filePath});
+
+  factory ResolvedPlaybackSource.network(String url) =>
+      ResolvedPlaybackSource._(networkUrl: url);
+
+  factory ResolvedPlaybackSource.file(String path) =>
+      ResolvedPlaybackSource._(filePath: path);
+
+  final String? networkUrl;
+  final String? filePath;
 }
 
 sealed class _DownloadTarget {}

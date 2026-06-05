@@ -73,6 +73,44 @@ CREATE TABLE sign_templates (
             'coordinates': '0.0000,0.0000,0.0000,0.2094,-0.1245,-0.1044,0.3466,-0.3666,-0.1380,0.2711,-0.5782,-0.1610,0.1341,-0.7218,-0.1864,0.2929,-0.9394,-0.0575,0.3686,-1.2676,-0.0938,0.4100,-1.4653,-0.1330,0.4322,-1.6567,-0.1676,0.1267,-0.9881,-0.0679,0.1545,-1.3813,-0.0959,0.1602,-1.6136,-0.1478,0.1644,-1.8275,-0.1890,-0.0276,-0.9221,-0.0910,-0.0594,-1.2736,-0.1701,-0.0733,-1.5210,-0.2607,-0.0858,-1.7459,-0.3237,-0.1777,-0.7649,-0.1199,-0.1568,-0.9912,-0.2139,-0.0701,-0.9159,-0.2444,0.0118,-0.8009,-0.2592'
           });
         }
+        if (oldVersion < 5) {
+          const familyDrive = 'drive:1irPruo9Umo4Y7lQLCt9KBu7zqqs94llm';
+          for (final lessonId in ['f2', 'f3']) {
+            await db.update(
+              'lessons',
+              {'video_url': familyDrive},
+              where: 'id = ?',
+              whereArgs: [lessonId],
+            );
+            await db.update(
+              'dictionary_signs',
+              {'video_url': familyDrive},
+              where: 'id = ?',
+              whereArgs: ['dict_$lessonId'],
+            );
+          }
+        }
+        if (oldVersion < 6) {
+          const familyVideos = <String, String>{
+            'f1': 'drive:1sDiPwsldo5bNo6odsbfTCntrQUBDQgk_',
+            'f2': 'drive:1ESRvlcuhz5iojfVVBGInRXBP46gISdVl',
+            'f3': 'drive:1irPruo9Umo4Y7lQLCt9KBu7zqqs94llm',
+          };
+          for (final entry in familyVideos.entries) {
+            await db.update(
+              'lessons',
+              {'video_url': entry.value},
+              where: 'id = ?',
+              whereArgs: [entry.key],
+            );
+            await db.update(
+              'dictionary_signs',
+              {'video_url': entry.value},
+              where: 'id = ?',
+              whereArgs: ['dict_${entry.key}'],
+            );
+          }
+        }
       },
     );
   }
