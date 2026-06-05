@@ -13,6 +13,8 @@ class ProfileScreen extends StatefulWidget {
     required this.onLanguageChanged,
     required this.onProfileSaved,
     required this.onLogout,
+    this.onOpenAdmin,
+    this.isAdmin = false,
   });
 
   final String language;
@@ -24,6 +26,8 @@ class ProfileScreen extends StatefulWidget {
   final ValueChanged<String> onLanguageChanged;
   final void Function(String name, String email) onProfileSaved;
   final VoidCallback onLogout;
+  final VoidCallback? onOpenAdmin;
+  final bool isAdmin;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -108,6 +112,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 _buildLanguageRow(),
                 const SizedBox(height: 12),
+                if (widget.isAdmin && widget.onOpenAdmin != null) ...[
+                  _settingsTile(
+                    icon: Icons.admin_panel_settings_outlined,
+                    title: 'Admin Panel',
+                    subtitle: 'Manage lessons, users, and content',
+                    onTap: widget.onOpenAdmin!,
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 _settingsTile(
                   icon: Icons.edit_outlined,
                   title: 'Edit Profile',

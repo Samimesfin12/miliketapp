@@ -1,7 +1,19 @@
 import 'package:flutter/material.dart';
 
 enum AppScreen { home, lessons, dictionary, profile }
-enum AppOverlay { none, lessonDetail, video, quiz, aiPractice }
+enum AppOverlay {
+  none,
+  lessonDetail,
+  video,
+  quiz,
+  aiPractice,
+  adminDashboard,
+  adminCategories,
+  adminCategoryForm,
+  adminLessons,
+  adminLessonForm,
+  adminUsers,
+}
 enum QuizType { watchAndChoose, chooseVideo }
 
 class Category {
@@ -31,6 +43,9 @@ class LessonItem {
     required this.thumbnail,
     this.videoUrl,
     this.videoLocalPath,
+    this.culturalNote,
+    this.cardImagePath,
+    this.showOnCultureCard = false,
   });
 
   final String id;
@@ -45,6 +60,15 @@ class LessonItem {
   /// Cached file on device after [VideoDownloader] completes.
   final String? videoLocalPath;
 
+  /// Optional note on Ethiopian cultural context for this sign.
+  final String? culturalNote;
+
+  /// Local image path for the Ethiopian Culture home card.
+  final String? cardImagePath;
+
+  /// When true, this sign appears on the home Ethiopian Culture card.
+  final bool showOnCultureCard;
+
   LessonItem copyWith({
     String? id,
     String? categoryId,
@@ -53,8 +77,13 @@ class LessonItem {
     String? thumbnail,
     String? videoUrl,
     String? videoLocalPath,
+    String? culturalNote,
+    String? cardImagePath,
+    bool? showOnCultureCard,
     bool clearVideoUrl = false,
     bool clearVideoLocalPath = false,
+    bool clearCulturalNote = false,
+    bool clearCardImagePath = false,
   }) {
     return LessonItem(
       id: id ?? this.id,
@@ -66,6 +95,13 @@ class LessonItem {
       videoLocalPath: clearVideoLocalPath
           ? null
           : (videoLocalPath ?? this.videoLocalPath),
+      culturalNote: clearCulturalNote
+          ? null
+          : (culturalNote ?? this.culturalNote),
+      cardImagePath: clearCardImagePath
+          ? null
+          : (cardImagePath ?? this.cardImagePath),
+      showOnCultureCard: showOnCultureCard ?? this.showOnCultureCard,
     );
   }
 }

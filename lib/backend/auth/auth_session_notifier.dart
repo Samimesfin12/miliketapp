@@ -16,6 +16,7 @@ class AuthSessionState {
     this.email,
     this.fullName,
     this.languagePreference,
+    this.isAdmin = false,
   });
 
   final AuthSessionStatus status;
@@ -23,6 +24,7 @@ class AuthSessionState {
   final String? email;
   final String? fullName;
   final String? languagePreference;
+  final bool isAdmin;
 
   bool get isAuthenticated =>
       status == AuthSessionStatus.authenticated && userId != null;
@@ -33,6 +35,7 @@ class AuthSessionState {
     String? email,
     String? fullName,
     String? languagePreference,
+    bool? isAdmin,
     bool clearUser = false,
   }) {
     if (clearUser) {
@@ -44,6 +47,7 @@ class AuthSessionState {
       email: email ?? this.email,
       fullName: fullName ?? this.fullName,
       languagePreference: languagePreference ?? this.languagePreference,
+      isAdmin: isAdmin ?? this.isAdmin,
     );
   }
 
@@ -54,6 +58,7 @@ class AuthSessionState {
       email: row['email'] as String,
       fullName: row['full_name'] as String,
       languagePreference: row['language_preference'] as String? ?? 'en',
+      isAdmin: (row['is_admin'] as int? ?? 0) == 1,
     );
   }
 }

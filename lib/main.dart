@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:esl_learning_flutter/backend/auth/auth_session_notifier.dart';
 import 'package:esl_learning_flutter/backend/providers.dart';
 import 'package:esl_learning_flutter/backend/services/video_downloader.dart';
-import 'package:esl_learning_flutter/data/app_data.dart';
+import 'package:esl_learning_flutter/backend/models/curriculum_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/screens/splash_screen.dart';
@@ -23,6 +23,12 @@ import 'package:esl_learning_flutter/screens/profile_screen.dart';
 import 'package:esl_learning_flutter/screens/quiz_screen.dart';
 import 'package:esl_learning_flutter/screens/ai_practice_screen.dart';
 import 'package:esl_learning_flutter/screens/drawer_info_screen.dart';
+import 'package:esl_learning_flutter/screens/admin/admin_dashboard_screen.dart';
+import 'package:esl_learning_flutter/screens/admin/admin_lessons_screen.dart';
+import 'package:esl_learning_flutter/screens/admin/admin_lesson_form_screen.dart';
+import 'package:esl_learning_flutter/screens/admin/admin_users_screen.dart';
+import 'package:esl_learning_flutter/screens/admin/admin_categories_screen.dart';
+import 'package:esl_learning_flutter/screens/admin/admin_category_form_screen.dart';
 
 const bool _debugMode = false; // Set to true for verbose logging
 
@@ -65,6 +71,9 @@ class _RootAppState extends ConsumerState<RootApp> {
   AppOverlay overlay = AppOverlay.none;
   Category? selectedCategory;
   LessonItem? selectedLesson;
+  LessonItem? adminEditingLesson;
+  Category? adminEditingCategory;
+  String? adminInitialCategoryId;
   String quizCategory = 'greetings';
   bool videoDownloadBusy = false;
   double? videoDownloadProgress;
@@ -111,7 +120,9 @@ class _RootAppState extends ConsumerState<RootApp> {
       } else {
         completedLessons.clear();
         completedLessons.addAll(prefs.getStringList('completedLessons') ?? []);
-        signsLearned = countCompletedInCurriculum(completedLessons);
+        final curriculum = await ref.read(curriculumProvider.future);
+        signsLearned =
+            curriculum.countCompletedInCurriculum(completedLessons);
         streak = prefs.getInt('streak') ?? 0;
         totalHours = prefs.getInt('totalHours') ?? 0;
       }
@@ -164,7 +175,8 @@ class _RootAppState extends ConsumerState<RootApp> {
         streak = (user['day_streak'] as int?) ?? 0;
         totalHours = (user['total_practiced'] as int?) ?? 0;
       }
-      signsLearned = countCompletedInCurriculum(completedLessons);
+      final curriculum = await ref.read(curriculumProvider.future);
+      signsLearned = curriculum.countCompletedInCurriculum(completedLessons);
       await userRepo.updateCounters(
         userId: userId,
         signsLearned: signsLearned,
@@ -193,7 +205,8 @@ class _RootAppState extends ConsumerState<RootApp> {
     await ref
         .read(progressRepositoryProvider)
         .markLessonCompleted(userId, lessonId);
-    signsLearned = countCompletedInCurriculum(completedLessons);
+    final curriculum = await ref.read(curriculumProvider.future);
+    signsLearned = curriculum.countCompletedInCurriculum(completedLessons);
     await ref
         .read(userRepositoryProvider)
         .updateCounters(userId: userId, signsLearned: signsLearned);
@@ -212,6 +225,9 @@ class _RootAppState extends ConsumerState<RootApp> {
       thumbnail: base.thumbnail,
       videoUrl: row['video_url'] as String?,
       videoLocalPath: row['video_local_path'] as String?,
+      culturalNote: row['cultural_note'] as String?,
+      cardImagePath: row['card_image_path'] as String?,
+      showOnCultureCard: (row['show_on_culture_card'] as int? ?? 0) == 1,
     );
   }
 
@@ -226,11 +242,10 @@ class _RootAppState extends ConsumerState<RootApp> {
 
   Future<void> _openLessonWithMediaFromDictionary(LessonItem lesson) async {
     final merged = await _lessonWithDbMedia(lesson);
+    final curriculum = await ref.read(curriculumProvider.future);
     if (!mounted) return;
     setState(() {
-      selectedCategory = categories.firstWhere(
-        (c) => c.id == lesson.categoryId,
-      );
+      selectedCategory = curriculum.categoryForLesson(lesson);
       selectedLesson = merged;
       overlay = AppOverlay.video;
     });
@@ -378,59 +393,178 @@ class _RootAppState extends ConsumerState<RootApp> {
 
     final displayName = auth.fullName ?? userName;
     final displayEmail = auth.email ?? userEmail;
+    final curriculumAsync = ref.watch(curriculumProvider);
 
-    Widget body;
+    return curriculumAsync.when(
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
+      data: (curriculum) {
+        final body = _buildBody(
+          auth: auth,
+          curriculum: curriculum,
+          displayName: displayName,
+          displayEmail: displayEmail,
+        );
+        final showBottomNav =
+            overlay == AppOverlay.none ||
+            overlay == AppOverlay.lessonDetail ||
+            overlay == AppOverlay.aiPractice ||
+            overlay == AppOverlay.quiz;
+
+        return Scaffold(
+          key: _scaffoldKey,
+          drawer: _showDrawerForOverlay()
+              ? _buildAppDrawer(displayName, displayEmail)
+              : null,
+          body: SafeArea(child: body),
+          bottomNavigationBar: showBottomNav
+              ? _buildBottomNavigation(curriculum)
+              : null,
+        );
+      },
+    );
+  }
+
+  bool _showDrawerForOverlay() =>
+      overlay == AppOverlay.none ||
+      overlay == AppOverlay.lessonDetail ||
+      overlay == AppOverlay.aiPractice ||
+      overlay == AppOverlay.quiz;
+
+  Widget _buildBody({
+    required AuthSessionState auth,
+    required CurriculumData curriculum,
+    required String displayName,
+    required String displayEmail,
+  }) {
     switch (overlay) {
+      case AppOverlay.adminDashboard:
+        return AdminDashboardScreen(
+          onBack: () => setState(() => overlay = AppOverlay.none),
+          onOpenCategories: () =>
+              setState(() => overlay = AppOverlay.adminCategories),
+          onOpenLessons: () => setState(() {
+            adminInitialCategoryId = null;
+            overlay = AppOverlay.adminLessons;
+          }),
+          onOpenUsers: () => setState(() => overlay = AppOverlay.adminUsers),
+        );
+      case AppOverlay.adminCategories:
+        return AdminCategoriesScreen(
+          onBack: () => setState(() => overlay = AppOverlay.adminDashboard),
+          onAddCategory: () => setState(() {
+            adminEditingCategory = null;
+            overlay = AppOverlay.adminCategoryForm;
+          }),
+          onEditCategory: (cat) => setState(() {
+            adminEditingCategory = cat;
+            overlay = AppOverlay.adminCategoryForm;
+          }),
+          onAddSignToCategory: (cat) => setState(() {
+            adminEditingLesson = null;
+            adminInitialCategoryId = cat.id;
+            overlay = AppOverlay.adminLessonForm;
+          }),
+        );
+      case AppOverlay.adminCategoryForm:
+        return AdminCategoryFormScreen(
+          existingCategory: adminEditingCategory,
+          onBack: () => setState(() => overlay = AppOverlay.adminCategories),
+          onSaved: () => setState(() => overlay = AppOverlay.adminCategories),
+        );
+      case AppOverlay.adminLessons:
+        return AdminLessonsScreen(
+          onBack: () => setState(() => overlay = AppOverlay.adminDashboard),
+          onAddLesson: () => setState(() {
+            adminEditingLesson = null;
+            adminInitialCategoryId = null;
+            overlay = AppOverlay.adminLessonForm;
+          }),
+          onEditLesson: (lesson) => setState(() {
+            adminEditingLesson = lesson;
+            adminInitialCategoryId = lesson.categoryId;
+            overlay = AppOverlay.adminLessonForm;
+          }),
+        );
+      case AppOverlay.adminLessonForm:
+        return AdminLessonFormScreen(
+          existingLesson: adminEditingLesson,
+          initialCategoryId: adminInitialCategoryId,
+          onBack: () {
+            final returnToCategories = adminInitialCategoryId != null &&
+                adminEditingLesson == null;
+            setState(() {
+              overlay = returnToCategories
+                  ? AppOverlay.adminCategories
+                  : AppOverlay.adminLessons;
+            });
+          },
+          onSaved: () {
+            final returnToCategories = adminInitialCategoryId != null &&
+                adminEditingLesson == null;
+            setState(() {
+              overlay = returnToCategories
+                  ? AppOverlay.adminCategories
+                  : AppOverlay.adminLessons;
+            });
+          },
+        );
+      case AppOverlay.adminUsers:
+        return AdminUsersScreen(
+          onBack: () => setState(() => overlay = AppOverlay.adminDashboard),
+        );
       case AppOverlay.lessonDetail:
-        body = selectedCategory == null
-            ? _buildFallbackBody('No lesson category selected yet.')
-            : LessonDetailScreen(
-                language: language,
-                category: selectedCategory!,
-                completedLessonIds: completedLessons,
-                onBack: () => setState(() => overlay = AppOverlay.none),
-                onOpenLesson: (lesson) =>
-                    unawaited(_openLessonWithMedia(lesson)),
-              );
-        break;
+        if (selectedCategory == null) {
+          return _buildFallbackBody('No lesson category selected yet.');
+        }
+        return LessonDetailScreen(
+          language: language,
+          category: selectedCategory!,
+          lessons: curriculum.lessonsByCategory[selectedCategory!.id] ?? [],
+          completedLessonIds: completedLessons,
+          onBack: () => setState(() => overlay = AppOverlay.none),
+          onOpenLesson: (lesson) => unawaited(_openLessonWithMedia(lesson)),
+        );
       case AppOverlay.video:
-        body = selectedLesson == null
-            ? _buildFallbackBody('No lesson selected yet.')
-            : VideoScreen(
-                language: language,
-                lesson: selectedLesson!,
-                downloadInProgress: videoDownloadBusy,
-                downloadProgress: videoDownloadProgress,
-                showDownloadButton: true,
-                onDownloadVideo: _downloadLessonVideo,
-                onBack: () => setState(() => overlay = AppOverlay.lessonDetail),
-                onLessonChanged: (lesson) =>
-                    unawaited(_replaceSelectedLesson(lesson)),
-                onStartQuiz: () => setState(() {
-                  quizCategory = selectedLesson!.categoryId;
-                  overlay = AppOverlay.quiz;
-                }),
-                onStartAI: () =>
-                    setState(() => overlay = AppOverlay.aiPractice),
-                onLearned: () {
-                  final uid = ref.read(authSessionProvider).userId;
-                  final lid = selectedLesson?.id;
-                  if (uid == null || lid == null) return;
-                  unawaited(_markLessonLearnedOnAccount(uid, lid));
-                },
-              );
-        break;
+        if (selectedLesson == null) {
+          return _buildFallbackBody('No lesson selected yet.');
+        }
+        return VideoScreen(
+          language: language,
+          lesson: selectedLesson!,
+          categoryLessons:
+              curriculum.lessonsByCategory[selectedLesson!.categoryId] ?? [],
+          downloadInProgress: videoDownloadBusy,
+          downloadProgress: videoDownloadProgress,
+          showDownloadButton: true,
+          onDownloadVideo: _downloadLessonVideo,
+          onBack: () => setState(() => overlay = AppOverlay.lessonDetail),
+          onLessonChanged: (lesson) =>
+              unawaited(_replaceSelectedLesson(lesson)),
+          onStartQuiz: () => setState(() {
+            quizCategory = selectedLesson!.categoryId;
+            overlay = AppOverlay.quiz;
+          }),
+          onStartAI: () => setState(() => overlay = AppOverlay.aiPractice),
+          onLearned: () {
+            final uid = ref.read(authSessionProvider).userId;
+            final lid = selectedLesson?.id;
+            if (uid == null || lid == null) return;
+            unawaited(_markLessonLearnedOnAccount(uid, lid));
+          },
+        );
       case AppOverlay.quiz:
-        body = QuizScreen(
+        return QuizScreen(
           language: language,
           categoryId: quizCategory,
+          categoryLessons: curriculum.lessonsByCategory[quizCategory] ?? [],
           onBack: () => setState(() => overlay = AppOverlay.none),
           onQuizComplete: (score, totalQuestions) async {
             final uid = auth.userId;
             if (uid == null) return;
-            await ref
-                .read(quizRepositoryProvider)
-                .insertResult(
+            await ref.read(quizRepositoryProvider).insertResult(
                   userId: uid,
                   categoryId: quizCategory,
                   score: score,
@@ -438,21 +572,21 @@ class _RootAppState extends ConsumerState<RootApp> {
                 );
           },
         );
-        break;
       case AppOverlay.aiPractice:
-        body = selectedLesson == null
-            ? _buildFallbackBody('No lesson selected for practice.')
-            : AIPracticeScreen(
-                language: language,
-                lesson: selectedLesson!,
-                onBack: () => setState(() => overlay = AppOverlay.video),
-              );
-        break;
+        if (selectedLesson == null) {
+          return _buildFallbackBody('No lesson selected for practice.');
+        }
+        return AIPracticeScreen(
+          language: language,
+          lesson: selectedLesson!,
+          onBack: () => setState(() => overlay = AppOverlay.video),
+        );
       case AppOverlay.none:
         switch (current) {
           case AppScreen.home:
-            body = HomeScreen(
+            return HomeScreen(
               language: language,
+              curriculum: curriculum,
               completedLessonIds: completedLessons,
               onOpenMenu: () => _scaffoldKey.currentState?.openDrawer(),
               onOpenCategory: (c) => setState(() {
@@ -463,18 +597,14 @@ class _RootAppState extends ConsumerState<RootApp> {
                 quizCategory = id;
                 overlay = AppOverlay.quiz;
               }),
-              onViewAll: () => setState(() {
-                current = AppScreen.lessons;
-              }),
-              onOpenLesson: (lesson) => setState(() {
-                selectedLesson = lesson;
-                overlay = AppOverlay.video;
-              }),
+              onViewAll: () => setState(() => current = AppScreen.lessons),
+              onOpenLesson: (lesson) =>
+                  unawaited(_openLessonWithMedia(lesson)),
             );
-            break;
           case AppScreen.lessons:
-            body = LessonsScreen(
+            return LessonsScreen(
               language: language,
+              curriculum: curriculum,
               completedLessonIds: completedLessons,
               onOpenAIPractice: () =>
                   setState(() => overlay = AppOverlay.aiPractice),
@@ -483,23 +613,25 @@ class _RootAppState extends ConsumerState<RootApp> {
                 overlay = AppOverlay.lessonDetail;
               }),
             );
-            break;
           case AppScreen.dictionary:
-            body = DictionaryScreen(
+            return DictionaryScreen(
               language: language,
               userId: auth.userId,
               onOpenLesson: (lesson) =>
                   unawaited(_openLessonWithMediaFromDictionary(lesson)),
             );
-            break;
           case AppScreen.profile:
-            body = ProfileScreen(
+            return ProfileScreen(
               language: language,
               userName: displayName,
               userEmail: displayEmail,
               signsLearned: signsLearned,
               streak: streak,
               totalHours: totalHours,
+              isAdmin: auth.isAdmin,
+              onOpenAdmin: auth.isAdmin
+                  ? () => setState(() => overlay = AppOverlay.adminDashboard)
+                  : null,
               onLanguageChanged: (value) async {
                 language = value;
                 final uid = auth.userId;
@@ -535,26 +667,11 @@ class _RootAppState extends ConsumerState<RootApp> {
                 });
               },
             );
-            break;
         }
-        break;
     }
-
-    return Scaffold(
-      key: _scaffoldKey,
-      drawer: _buildAppDrawer(displayName, displayEmail),
-      body: SafeArea(child: body),
-      bottomNavigationBar:
-          overlay == AppOverlay.none ||
-              overlay == AppOverlay.lessonDetail ||
-              overlay == AppOverlay.aiPractice ||
-              overlay == AppOverlay.quiz
-          ? _buildBottomNavigation()
-          : null,
-    );
   }
 
-  Widget _buildBottomNavigation() {
+  Widget _buildBottomNavigation(CurriculumData curriculum) {
     final selectedIndex = overlay == AppOverlay.aiPractice ? 3 : tabIndex;
     return Container(
       decoration: const BoxDecoration(
@@ -566,6 +683,7 @@ class _RootAppState extends ConsumerState<RootApp> {
         child: Row(
           children: [
             _buildBottomNavItem(
+              curriculum: curriculum,
               index: 0,
               selectedIndex: selectedIndex,
               label: 'Home',
@@ -573,6 +691,7 @@ class _RootAppState extends ConsumerState<RootApp> {
               selectedIcon: Icons.home_rounded,
             ),
             _buildBottomNavItem(
+              curriculum: curriculum,
               index: 1,
               selectedIndex: selectedIndex,
               label: 'Lessons',
@@ -580,6 +699,7 @@ class _RootAppState extends ConsumerState<RootApp> {
               selectedIcon: Icons.school_rounded,
             ),
             _buildBottomNavItem(
+              curriculum: curriculum,
               index: 2,
               selectedIndex: selectedIndex,
               label: 'Dictionary',
@@ -587,6 +707,7 @@ class _RootAppState extends ConsumerState<RootApp> {
               selectedIcon: Icons.menu_book_rounded,
             ),
             _buildBottomNavItem(
+              curriculum: curriculum,
               index: 3,
               selectedIndex: selectedIndex,
               label: 'AI Practice',
@@ -600,6 +721,7 @@ class _RootAppState extends ConsumerState<RootApp> {
   }
 
   Widget _buildBottomNavItem({
+    required CurriculumData curriculum,
     required int index,
     required int selectedIndex,
     required String label,
@@ -616,10 +738,9 @@ class _RootAppState extends ConsumerState<RootApp> {
         onTap: () => setState(() {
           tabIndex = index;
           if (index == 3) {
-            selectedLesson ??=
-                (lessonsByCategory['greetings'] ?? const []).isNotEmpty
-                ? lessonsByCategory['greetings']!.first
-                : null;
+            final greetings =
+                curriculum.lessonsByCategory['greetings'] ?? const [];
+            selectedLesson ??= greetings.isNotEmpty ? greetings.first : null;
             overlay = AppOverlay.aiPractice;
             return;
           }

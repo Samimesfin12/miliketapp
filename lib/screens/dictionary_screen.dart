@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:esl_learning_flutter/backend/providers.dart';
-import 'package:esl_learning_flutter/data/app_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 
 class DictionaryScreen extends ConsumerStatefulWidget {
@@ -85,7 +84,17 @@ class _DictionaryScreenState extends ConsumerState<DictionaryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final all = lessonsByCategory.values.expand((list) => list).toList()
+    final curriculumAsync = ref.watch(curriculumProvider);
+    return curriculumAsync.when(
+      loading: () =>
+          const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Error: $e')),
+      data: (curriculum) => _buildContent(curriculum.allLessonsFlat()),
+    );
+  }
+
+  Widget _buildContent(List<LessonItem> allLessons) {
+    final all = List<LessonItem>.from(allLessons)
       ..sort((a, b) => a.sign.toLowerCase().compareTo(b.sign.toLowerCase()));
     final filtered = all.where((item) {
       final matchesQuery =

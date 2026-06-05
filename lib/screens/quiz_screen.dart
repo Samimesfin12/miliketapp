@@ -11,11 +11,13 @@ class QuizScreen extends StatefulWidget {
     super.key,
     required this.language,
     required this.categoryId,
+    required this.categoryLessons,
     required this.onBack,
     this.onQuizComplete,
   });
   final String language;
   final String categoryId;
+  final List<LessonItem> categoryLessons;
   final VoidCallback onBack;
   final Future<void> Function(int score, int totalQuestions)? onQuizComplete;
 
@@ -259,7 +261,7 @@ class _QuizScreenState extends State<QuizScreen> {
     final parts = q.correctAnswer.split('/');
     final en = parts.first.trim();
     final am = parts.length > 1 ? parts.sublist(1).join('/').trim() : en;
-    final list = lessonsByCategory[widget.categoryId] ?? const <LessonItem>[];
+    final list = widget.categoryLessons;
     for (final l in list) {
       if (l.sign.trim() == en) return l;
     }

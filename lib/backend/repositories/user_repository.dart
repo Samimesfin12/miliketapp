@@ -1,4 +1,5 @@
 import 'package:bcrypt/bcrypt.dart';
+import 'package:sqflite/sqflite.dart';
 
 import 'package:esl_learning_flutter/backend/database/sqlite_helper.dart';
 
@@ -31,9 +32,21 @@ final class UserRepository {
       'signs_learned': 0,
       'day_streak': 0,
       'total_practiced': 0,
+      'is_admin': 0,
       'created_at': now,
       'updated_at': now,
     });
+  }
+
+  Future<List<Map<String, Object?>>> allUsers() async {
+    final db = await _helper.database;
+    return db.query('users', orderBy: 'created_at DESC');
+  }
+
+  Future<int> countUsers() async {
+    final db = await _helper.database;
+    final result = await db.rawQuery('SELECT COUNT(*) AS c FROM users');
+    return Sqflite.firstIntValue(result) ?? 0;
   }
 
   Future<Map<String, Object?>?> getUserByEmail(String email) async {

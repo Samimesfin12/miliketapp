@@ -3,6 +3,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'package:bcrypt/bcrypt.dart';
+
 import 'package:esl_learning_flutter/backend/database/db_constants.dart';
 import 'package:esl_learning_flutter/data/app_data.dart' as app;
 
@@ -111,6 +113,25 @@ CREATE TABLE sign_templates (
             );
           }
         }
+        if (oldVersion < 7) {
+          await db.execute(
+            'ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0',
+          );
+          await _seedAdminUser(db);
+        }
+        if (oldVersion < 8) {
+          await db.execute(
+            'ALTER TABLE lessons ADD COLUMN cultural_note TEXT',
+          );
+        }
+        if (oldVersion < 9) {
+          await db.execute(
+            'ALTER TABLE lessons ADD COLUMN card_image_path TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE lessons ADD COLUMN show_on_culture_card INTEGER NOT NULL DEFAULT 0',
+          );
+        }
       },
     );
   }
@@ -137,6 +158,7 @@ CREATE TABLE users (
   signs_learned INTEGER NOT NULL DEFAULT 0,
   day_streak INTEGER NOT NULL DEFAULT 0,
   total_practiced INTEGER NOT NULL DEFAULT 0,
+  is_admin INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   last_login_at TEXT
@@ -166,6 +188,9 @@ CREATE TABLE lessons (
   video_local_path TEXT,
   locked INTEGER NOT NULL DEFAULT 1,
   order_index INTEGER NOT NULL,
+  cultural_note TEXT,
+  card_image_path TEXT,
+  show_on_culture_card INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE CASCADE
 );
 ''');
@@ -308,6 +333,42 @@ CREATE TABLE sign_templates (
     });
 
     await batch.commit(noResult: true);
+    await _seedAdminUser(db);
+  }
+
+  static Future<void> _seedAdminUser(Database db) async {
+    const email = 'admin@miliketapp.com';
+    final existing = await db.query(
+      'users',
+      where: 'LOWER(email) = ?',
+      whereArgs: [email],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) {
+      await db.update(
+        'users',
+        {'is_admin': 1},
+        where: 'LOWER(email) = ?',
+        whereArgs: [email],
+      );
+      return;
+    }
+    final now = DateTime.now().toUtc().toIso8601String();
+    await db.insert('users', {
+      'email': email,
+      'password_hash': BCrypt.hashpw(
+        'AdminPass2025!',
+        BCrypt.gensalt(logRounds: 10),
+      ),
+      'full_name': 'Admin',
+      'language_preference': 'en',
+      'signs_learned': 0,
+      'day_streak': 0,
+      'total_practiced': 0,
+      'is_admin': 1,
+      'created_at': now,
+      'updated_at': now,
+    });
   }
 
   Future<void> saveSignTemplate(String signId, List<double> coordinates) async {

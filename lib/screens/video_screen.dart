@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:esl_learning_flutter/data/app_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
@@ -21,9 +20,11 @@ class VideoScreen extends StatefulWidget {
     required this.onStartQuiz,
     required this.onStartAI,
     required this.onLearned,
+    required this.categoryLessons,
   });
   final String language;
   final LessonItem lesson;
+  final List<LessonItem> categoryLessons;
   final bool downloadInProgress;
   final double? downloadProgress;
   final bool showDownloadButton;
@@ -41,8 +42,7 @@ class VideoScreen extends StatefulWidget {
 class _VideoScreenState extends State<VideoScreen> {
   bool _watched = false;
 
-  List<LessonItem> _lessonsInCategory() =>
-      lessonsByCategory[widget.lesson.categoryId] ?? const <LessonItem>[];
+  List<LessonItem> _lessonsInCategory() => widget.categoryLessons;
 
   int _lessonIndex() {
     final list = _lessonsInCategory();
@@ -124,6 +124,52 @@ class _VideoScreenState extends State<VideoScreen> {
                     if (mounted) setState(() => _watched = true);
                   },
                 ),
+                if (widget.lesson.culturalNote != null &&
+                    widget.lesson.culturalNote!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F7F4),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFDCE8E0)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.public,
+                          color: kPrimary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Cultural context',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: kPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                widget.lesson.culturalNote!,
+                                style: const TextStyle(
+                                  height: 1.35,
+                                  color: Color(0xFF3F4941),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (widget.showDownloadButton) ...[
                   const SizedBox(height: 12),
                   Builder(

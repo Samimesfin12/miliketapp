@@ -1,12 +1,17 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:esl_learning_flutter/data/app_data.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:esl_learning_flutter/backend/models/curriculum_data.dart';
+import 'package:esl_learning_flutter/backend/providers.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({
     super.key,
     required this.language,
+    required this.curriculum,
     required this.completedLessonIds,
     required this.onOpenCategory,
     required this.onOpenQuiz,
@@ -15,6 +20,7 @@ class HomeScreen extends StatelessWidget {
     required this.onOpenLesson,
   });
   final String language;
+  final CurriculumData curriculum;
   final Set<String> completedLessonIds;
   final ValueChanged<Category> onOpenCategory;
   final ValueChanged<String> onOpenQuiz;
@@ -23,52 +29,32 @@ class HomeScreen extends StatelessWidget {
   final ValueChanged<LessonItem> onOpenLesson;
 
   @override
-  Widget build(BuildContext context) {
-    final mappedCategories = <_QuickCategory>[
-      _QuickCategory(
-        category: categories.firstWhere((c) => c.id == 'greetings'),
-        icon: Icons.front_hand_outlined,
-        lessonCount: lessonsByCategory['greetings']?.length ?? 0,
-        completedCount: countCompletedInCategory(
-          'greetings',
-          completedLessonIds,
-        ),
-        backgroundColor: const Color(0xFFF3F7F4),
-      ),
-      _QuickCategory(
-        category: categories.firstWhere((c) => c.id == 'family'),
-        icon: Icons.family_restroom_outlined,
-        lessonCount: lessonsByCategory['family']?.length ?? 0,
-        completedCount: countCompletedInCategory('family', completedLessonIds),
-        backgroundColor: const Color(0xFFEFF8F2),
-      ),
-      _QuickCategory(
-        category: categories.firstWhere((c) => c.id == 'food'),
-        icon: Icons.restaurant_outlined,
-        lessonCount: lessonsByCategory['food']?.length ?? 0,
-        completedCount: countCompletedInCategory('food', completedLessonIds),
-        backgroundColor: const Color(0xFFF5F8F5),
-      ),
-      _QuickCategory(
-        category: categories.firstWhere((c) => c.id == 'shopping'),
-        icon: Icons.shopping_bag_outlined,
-        lessonCount: lessonsByCategory['shopping']?.length ?? 0,
-        completedCount: countCompletedInCategory(
-          'shopping',
-          completedLessonIds,
-        ),
-        backgroundColor: const Color(0xFFF1F6F4),
-      ),
-    ];
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cultureSignsAsync = ref.watch(cultureCardSignsProvider);
 
-    final progress = curriculumProgressFraction(completedLessonIds);
+    final mappedCategories = curriculum.categories.take(6).map((c) {
+      return _QuickCategory(
+        category: c,
+        icon: _iconForCategory(c.id),
+        lessonCount: curriculum.lessonsByCategory[c.id]?.length ?? 0,
+        completedCount: curriculum.countCompletedInCategory(
+          c.id,
+          completedLessonIds,
+        ),
+        backgroundColor: c.color.withValues(alpha: 0.08),
+      );
+    }).toList();
+
+    final progress = curriculum.progressFraction(completedLessonIds);
     final progressPercent = (progress * 100).round();
-    final nextLesson = firstIncompleteLesson(completedLessonIds);
+    final nextLesson = curriculum.firstIncompleteLesson(completedLessonIds);
     final continueCategory = nextLesson != null
-        ? categoryForLesson(nextLesson)
-        : categories.first;
+        ? curriculum.categoryForLesson(nextLesson)
+        : (curriculum.categories.isNotEmpty
+              ? curriculum.categories.first
+              : null);
     final chipLabel = nextLesson != null
-        ? continueLessonChipLabel(language, nextLesson)
+        ? curriculum.continueLessonChipLabel(language, nextLesson)
         : (language == 'en' ? 'All lessons complete!' : 'ሁሉንም ትምህርቶች አጠናቀዋል!');
     final subtitleLine = nextLesson != null
         ? (language == 'en' ? nextLesson.sign : nextLesson.signAm)
@@ -187,7 +173,7 @@ class HomeScreen extends StatelessWidget {
           onTap: () {
             if (nextLesson != null) {
               onOpenLesson(nextLesson);
-            } else {
+            } else if (continueCategory != null) {
               onOpenCategory(continueCategory);
             }
           },
@@ -405,119 +391,276 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x14000000),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
+        cultureSignsAsync.when(
+          loading: () => const SizedBox(
+            height: 220,
+            child: Center(child: CircularProgressIndicator()),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                height: 160,
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(18),
-                      ),
-                      child: Image.network(
-                        'https://upload.wikimedia.org/wikipedia/commons/thumb/9/99/Ethiopian_coffee_ceremony.jpg/1280px-Ethiopian_coffee_ceremony.jpg',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Color(0xFF3D200F), Color(0xFF8F4A16)],
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                              ),
-                            ),
-                            child: const Center(
-                              child: Text('☕', style: TextStyle(fontSize: 84)),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(18),
-                          ),
-                          color: Colors.black.withValues(alpha: 0.15),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 14,
-                      top: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0A6D40),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text(
-                          'NEW HERE',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+          error: (e, _) => Text('Could not load cultural signs: $e'),
+          data: (signs) {
+            if (signs.isEmpty) {
+              return _CulturePlaceholderCard(language: language);
+            }
+            if (signs.length == 1) {
+              return _CultureSignCard(
+                lesson: signs.first,
+                language: language,
+                onTap: () => onOpenLesson(signs.first),
+              );
+            }
+            return SizedBox(
+              height: 268,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: signs.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (context, i) => SizedBox(
+                  width: MediaQuery.sizeOf(context).width * 0.82,
+                  child: _CultureSignCard(
+                    lesson: signs[i],
+                    language: language,
+                    compact: true,
+                    onTap: () => onOpenLesson(signs[i]),
+                  ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-                child: Row(
-                  children: const [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Coffee Ceremony & Injera',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 15,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'ቡና ሥነ-ሥርዓት እና እንጀራ ባህል',
-                            style: TextStyle(color: Colors.black54),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.bookmark_border),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ],
+    );
+  }
+
+  IconData _iconForCategory(String id) {
+    switch (id) {
+      case 'greetings':
+        return Icons.front_hand_outlined;
+      case 'family':
+        return Icons.family_restroom_outlined;
+      case 'food':
+        return Icons.restaurant_outlined;
+      case 'shopping':
+        return Icons.shopping_bag_outlined;
+      case 'emergency':
+        return Icons.emergency_outlined;
+      case 'numbers':
+        return Icons.onetwothree;
+      default:
+        return Icons.category_outlined;
+    }
+  }
+}
+
+class _CultureSignCard extends StatelessWidget {
+  const _CultureSignCard({
+    required this.lesson,
+    required this.language,
+    required this.onTap,
+    this.compact = false,
+  });
+
+  final LessonItem lesson;
+  final String language;
+  final VoidCallback onTap;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = language == 'en' ? lesson.sign : lesson.signAm;
+    final subtitle = language == 'en' ? lesson.signAm : lesson.sign;
+    final note = lesson.culturalNote?.trim();
+    final imageHeight = compact ? 148.0 : 160.0;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: imageHeight,
+              width: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(18),
+                    ),
+                    child: _CultureCardImage(lesson: lesson),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(18),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.05),
+                            Colors.black.withValues(alpha: 0.35),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 14,
+                    top: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0A6D40),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        'CULTURAL SIGN',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 14,
+                    right: 14,
+                    bottom: 12,
+                    child: Text(
+                      lesson.thumbnail,
+                      style: const TextStyle(fontSize: 28),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(14, compact ? 10 : 12, 14, compact ? 12 : 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                        if (note != null && note.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            note,
+                            maxLines: compact ? 1 : 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[700],
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8, top: 2),
+                    child: Icon(Icons.play_circle_outline, color: kPrimary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CultureCardImage extends StatelessWidget {
+  const _CultureCardImage({required this.lesson});
+
+  final LessonItem lesson;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = lesson.cardImagePath;
+    if (path != null && path.isNotEmpty && File(path).existsSync()) {
+      return Image.file(File(path), fit: BoxFit.cover);
+    }
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF3D200F), Color(0xFF8F4A16)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(lesson.thumbnail, style: const TextStyle(fontSize: 84)),
+    );
+  }
+}
+
+class _CulturePlaceholderCard extends StatelessWidget {
+  const _CulturePlaceholderCard({required this.language});
+
+  final String language;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F3F2),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E2E1)),
+      ),
+      child: Row(
+        children: [
+          const Text('🇪🇹', style: TextStyle(fontSize: 36)),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              language == 'en'
+                  ? 'Cultural signs will appear here when an admin adds them with a home card image.'
+                  : 'አስተዳዳሪ ባህላዊ ምልክቶችን ከምስል ሲጨምሩ እዚህ ይታያሉ።',
+              style: TextStyle(color: Colors.grey[700], height: 1.35),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -51,4 +51,36 @@ final class DictionaryRepository {
     );
     return rows.map((e) => e['dictionary_sign_id']! as String).toSet();
   }
+
+  Future<void> upsertForLesson({
+    required String lessonId,
+    required String signEn,
+    required String signAm,
+    required String thumbnailEmoji,
+    String? videoUrl,
+  }) async {
+    final db = await _helper.database;
+    final dictId = 'dict_$lessonId';
+    await db.insert(
+      'dictionary_signs',
+      {
+        'id': dictId,
+        'sign_en': signEn,
+        'sign_am': signAm,
+        'thumbnail_emoji': thumbnailEmoji,
+        'video_url': videoUrl,
+        'video_local_path': null,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<int> deleteForLesson(String lessonId) async {
+    final db = await _helper.database;
+    return db.delete(
+      'dictionary_signs',
+      where: 'id = ?',
+      whereArgs: ['dict_$lessonId'],
+    );
+  }
 }

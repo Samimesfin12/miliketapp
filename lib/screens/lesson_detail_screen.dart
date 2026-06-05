@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:esl_learning_flutter/data/app_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 
@@ -8,19 +7,21 @@ class LessonDetailScreen extends StatelessWidget {
     super.key,
     required this.language,
     required this.category,
+    required this.lessons,
     required this.completedLessonIds,
     required this.onBack,
     required this.onOpenLesson,
   });
   final String language;
   final Category category;
+  final List<LessonItem> lessons;
   final Set<String> completedLessonIds;
   final VoidCallback onBack;
   final ValueChanged<LessonItem> onOpenLesson;
 
   @override
   Widget build(BuildContext context) {
-    final list = lessonsByCategory[category.id] ?? [];
+    final list = lessons;
     final title = language == 'en' ? category.title : category.titleAm;
     final completedCount = list
         .where((lesson) => completedLessonIds.contains(lesson.id))

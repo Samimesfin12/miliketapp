@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:esl_learning_flutter/data/app_data.dart';
+import 'package:esl_learning_flutter/backend/models/curriculum_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 
@@ -7,21 +7,24 @@ class LessonsScreen extends StatelessWidget {
   const LessonsScreen({
     super.key,
     required this.language,
+    required this.curriculum,
     required this.completedLessonIds,
     required this.onOpenCategory,
     required this.onOpenAIPractice,
   });
 
   final String language;
+  final CurriculumData curriculum;
   final Set<String> completedLessonIds;
   final ValueChanged<Category> onOpenCategory;
   final VoidCallback onOpenAIPractice;
 
   @override
   Widget build(BuildContext context) {
-    final totalLessons = totalCurriculumLessons();
-    final completedOverall = countCompletedInCurriculum(completedLessonIds);
-    final overallFraction = curriculumProgressFraction(completedLessonIds);
+    final totalLessons = curriculum.totalLessons();
+    final completedOverall =
+        curriculum.countCompletedInCurriculum(completedLessonIds);
+    final overallFraction = curriculum.progressFraction(completedLessonIds);
     final overallPercent = (overallFraction * 100).round();
 
     return ListView(
@@ -177,7 +180,7 @@ class LessonsScreen extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: GridView.builder(
-            itemCount: categories.length,
+            itemCount: curriculum.categories.length,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -187,8 +190,8 @@ class LessonsScreen extends StatelessWidget {
               childAspectRatio: 0.92,
             ),
             itemBuilder: (context, i) {
-              final c = categories[i];
-              final list = lessonsByCategory[c.id] ?? [];
+              final c = curriculum.categories[i];
+              final list = curriculum.lessonsByCategory[c.id] ?? [];
               final completedCount = list
                   .where((l) => completedLessonIds.contains(l.id))
                   .length;
@@ -212,7 +215,7 @@ class LessonsScreen extends StatelessWidget {
                       Container(
                         height: 4,
                         decoration: BoxDecoration(
-                          color: _accentForCategory(c.id),
+                          color: _accentForCategory(c),
                           borderRadius: const BorderRadius.vertical(
                             bottom: Radius.circular(5),
                           ),
@@ -223,7 +226,7 @@ class LessonsScreen extends StatelessWidget {
                         children: [
                           Icon(
                             labelIcon,
-                            color: _accentForCategory(c.id),
+                            color: _accentForCategory(c),
                             size: 22,
                           ),
                           const Spacer(),
@@ -252,7 +255,7 @@ class LessonsScreen extends StatelessWidget {
                         child: Align(
                           alignment: Alignment.topLeft,
                           child: Text(
-                            _descriptionForCategory(c.id),
+                            c.description,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -351,41 +354,5 @@ class LessonsScreen extends StatelessWidget {
     }
   }
 
-  Color _accentForCategory(String id) {
-    switch (id) {
-      case 'greetings':
-        return const Color(0xFF3F51B5);
-      case 'family':
-        return const Color(0xFFE91E63);
-      case 'food':
-        return const Color(0xFFFF9800);
-      case 'shopping':
-        return const Color(0xFF00BCD4);
-      case 'emergency':
-        return const Color(0xFFF44336);
-      case 'numbers':
-        return const Color(0xFF9C27B0);
-      default:
-        return kPrimary;
-    }
-  }
-
-  String _descriptionForCategory(String id) {
-    switch (id) {
-      case 'greetings':
-        return 'Essential signs for daily interactions';
-      case 'family':
-        return 'Learn signs for relatives and relationships';
-      case 'food':
-        return 'Common food and dining terminology';
-      case 'shopping':
-        return 'Vocabulary for markets and transactions';
-      case 'emergency':
-        return 'Crucial signs for urgent situations';
-      case 'numbers':
-        return 'Counting and numerical concepts';
-      default:
-        return 'Start learning this category';
-    }
-  }
+  Color _accentForCategory(Category category) => category.color;
 }
