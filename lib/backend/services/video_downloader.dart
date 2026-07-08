@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path/path.dart' as p;
 
 /// Google Drive direct-download + local cache (virus-scan confirm, Range resume).
@@ -41,12 +42,16 @@ final class VideoDownloader {
         host == 'drive.google.com' || host.endsWith('.drive.google.com');
 
     if (isDriveHost) {
-      final idParam = uri.queryParameters['id'];
+      final idParam = uri.queryParameters['id'] ?? uri.queryParameters['fileid'];
       if (idParam != null && idParam.isNotEmpty) return idParam;
 
-      final filePath = RegExp(r'/file/d/([-\w]+)');
+      final filePath = RegExp(r'/file/d/([-\w]+)(?:/|$)', caseSensitive: false);
       final m2 = filePath.firstMatch(uri.path);
       if (m2 != null) return m2.group(1);
+
+      final sharePath = RegExp(r'/d/([-\w]+)(?:/|$)', caseSensitive: false);
+      final m3 = sharePath.firstMatch(uri.path);
+      if (m3 != null) return m3.group(1);
     }
 
     // Bare file id stored without drive: prefix (e.g. family Father lesson).
@@ -89,8 +94,43 @@ final class VideoDownloader {
     }
   }
 
-  /// Downloads Drive (or HTTPS) media into [cacheDir] and returns a local file path.
-  /// ExoPlayer cannot stream raw Drive links; caching avoids 403/HTML responses.
+  static final Map<String, Future<void>> _activeDownloads = {};
+
+  void _startBackgroundDownload(String driveId, String destinationPath) {
+    if (_activeDownloads.containsKey(driveId)) return;
+    final downloadFuture = Future(() async {
+      try {
+        final tempDest = '$destinationPath.tmp';
+        final tempFile = File(tempDest);
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+        }
+        await downloadDriveVideoToFile(
+          fileId: driveId,
+          destinationPath: tempDest,
+        );
+        final destFile = File(destinationPath);
+        if (await destFile.exists()) {
+          await destFile.delete();
+        }
+        await tempFile.rename(destinationPath);
+      } catch (e) {
+        debugPrint('Background download error for $driveId: $e');
+        try {
+          final tempFile = File('$destinationPath.tmp');
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+          }
+        } catch (_) {}
+      } finally {
+        _activeDownloads.remove(driveId);
+      }
+    });
+    _activeDownloads[driveId] = downloadFuture;
+  }
+
+  /// Resolves Drive (or HTTPS) media. Streaming-first for instant playback,
+  /// with background local caching for future offline use.
   Future<ResolvedPlaybackSource> resolvePlaybackSource(
     String urlOrFileId, {
     required Directory cacheDir,
@@ -101,21 +141,22 @@ final class VideoDownloader {
     if (driveId != null) {
       final cacheFile = File(drivePlaybackCachePath(cacheDir, driveId));
       await cacheFile.parent.create(recursive: true);
-      if (!await isValidVideoFile(cacheFile)) {
-        if (await cacheFile.exists()) await cacheFile.delete();
-        await downloadDriveVideoToFile(
-          fileId: driveId,
-          destinationPath: cacheFile.path,
-          cancelToken: cancelToken,
-        );
-        if (!await isValidVideoFile(cacheFile)) {
-          throw StateError(
-            'Drive file $driveId did not download as video. '
-            'Share it as "Anyone with the link".',
-          );
-        }
+      if (await isValidVideoFile(cacheFile)) {
+        return ResolvedPlaybackSource.file(cacheFile.path);
       }
-      return ResolvedPlaybackSource.file(cacheFile.path);
+
+      // Start background download to cache file if not already downloading
+      _startBackgroundDownload(driveId, cacheFile.path);
+
+      // Resolve direct stream URL to play immediately
+      final resolved = await _resolveDownloadTarget(driveId, cancelToken);
+      if (resolved is _DirectBytes) {
+        await cacheFile.writeAsBytes(resolved.bytes, flush: true);
+        return ResolvedPlaybackSource.file(cacheFile.path);
+      } else {
+        final streamUrl = (resolved as _StreamUrl).url;
+        return ResolvedPlaybackSource.network(streamUrl);
+      }
     }
 
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
@@ -134,6 +175,11 @@ final class VideoDownloader {
   }) async {
     await Directory(p.dirname(destinationPath)).create(recursive: true);
     final dest = File(destinationPath);
+
+    if (await dest.exists() && await isValidVideoFile(dest)) {
+      onProgress?.call(await dest.length(), await dest.length());
+      return;
+    }
 
     final resolved = await _resolveDownloadTarget(fileId, cancelToken);
     if (resolved is _DirectBytes) {
@@ -173,6 +219,11 @@ final class VideoDownloader {
   }) async {
     await Directory(p.dirname(destinationPath)).create(recursive: true);
     final dest = File(destinationPath);
+
+    if (await dest.exists() && await isValidVideoFile(dest)) {
+      onProgress?.call(await dest.length(), await dest.length());
+      return;
+    }
 
     final driveId = parseDriveFileId(urlOrFileId);
     if (driveId != null) {

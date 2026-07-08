@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -23,12 +24,10 @@ import 'package:esl_learning_flutter/screens/profile_screen.dart';
 import 'package:esl_learning_flutter/screens/quiz_screen.dart';
 import 'package:esl_learning_flutter/screens/ai_practice_screen.dart';
 import 'package:esl_learning_flutter/screens/drawer_info_screen.dart';
-import 'package:esl_learning_flutter/screens/admin/admin_dashboard_screen.dart';
-import 'package:esl_learning_flutter/screens/admin/admin_lessons_screen.dart';
-import 'package:esl_learning_flutter/screens/admin/admin_lesson_form_screen.dart';
-import 'package:esl_learning_flutter/screens/admin/admin_users_screen.dart';
-import 'package:esl_learning_flutter/screens/admin/admin_categories_screen.dart';
-import 'package:esl_learning_flutter/screens/admin/admin_category_form_screen.dart';
+
+
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 const bool _debugMode = false; // Set to true for verbose logging
 
@@ -50,6 +49,15 @@ class EthSLApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'miliketapp',
       theme: buildAppTheme(),
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', ''),
+        Locale('am', ''),
+      ],
       home: const RootApp(),
     );
   }
@@ -71,9 +79,7 @@ class _RootAppState extends ConsumerState<RootApp> {
   AppOverlay overlay = AppOverlay.none;
   Category? selectedCategory;
   LessonItem? selectedLesson;
-  LessonItem? adminEditingLesson;
-  Category? adminEditingCategory;
-  String? adminInitialCategoryId;
+
   String quizCategory = 'greetings';
   bool videoDownloadBusy = false;
   double? videoDownloadProgress;
@@ -136,7 +142,7 @@ class _RootAppState extends ConsumerState<RootApp> {
       if (!mounted) return;
       setState(() {
         showSplash = false;
-        showOnboarding = auth.isAuthenticated && !hasSeenOnboarding;
+        showOnboarding = !hasSeenOnboarding;
       });
     } catch (e) {
       _log('Boot sequence error: $e');
@@ -284,6 +290,23 @@ class _RootAppState extends ConsumerState<RootApp> {
     try {
       final dir = await getApplicationSupportDirectory();
       final dest = VideoDownloader.defaultLessonVideoPath(dir, lesson.id);
+      final destinationFile = File(dest);
+      if (await destinationFile.exists() &&
+          await VideoDownloader.isValidVideoFile(destinationFile)) {
+        await ref.read(lessonRepositoryProvider).setLocalVideoPath(lesson.id, dest);
+        final merged = lesson.copyWith(videoLocalPath: dest);
+        if (!mounted) return;
+        setState(() {
+            selectedLesson = merged;
+            videoDownloadBusy = false;
+            videoDownloadProgress = null;
+          });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Video already available offline.')),
+        );
+        return;
+      }
+
       await ref
           .read(videoDownloaderProvider)
           .downloadVideoToFile(
@@ -344,6 +367,23 @@ class _RootAppState extends ConsumerState<RootApp> {
     }
   }
 
+  Future<void> _changeLanguage(String value) async {
+    setState(() {
+      language = value;
+    });
+    final auth = ref.read(authSessionProvider);
+    final uid = auth.userId;
+    if (uid != null) {
+      await ref
+          .read(userRepositoryProvider)
+          .updateLanguage(uid, value);
+      ref
+          .read(authSessionProvider.notifier)
+          .applyLanguagePreference(value);
+    }
+    await persist();
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AuthSessionState>(authSessionProvider, (prev, next) {
@@ -365,11 +405,6 @@ class _RootAppState extends ConsumerState<RootApp> {
 
     if (showSplash) return const SplashScreen();
 
-    final auth = ref.watch(authSessionProvider);
-    if (!auth.isAuthenticated) {
-      return const AuthenticationScreen();
-    }
-
     if (showOnboarding) {
       return OnboardingScreen(
         initialLanguage: language,
@@ -389,6 +424,11 @@ class _RootAppState extends ConsumerState<RootApp> {
           setState(() => showOnboarding = false);
         },
       );
+    }
+
+    final auth = ref.watch(authSessionProvider);
+    if (!auth.isAuthenticated) {
+      return AuthenticationScreen(initialLanguage: language);
     }
 
     final displayName = auth.fullName ?? userName;
@@ -440,81 +480,7 @@ class _RootAppState extends ConsumerState<RootApp> {
     required String displayEmail,
   }) {
     switch (overlay) {
-      case AppOverlay.adminDashboard:
-        return AdminDashboardScreen(
-          onBack: () => setState(() => overlay = AppOverlay.none),
-          onOpenCategories: () =>
-              setState(() => overlay = AppOverlay.adminCategories),
-          onOpenLessons: () => setState(() {
-            adminInitialCategoryId = null;
-            overlay = AppOverlay.adminLessons;
-          }),
-          onOpenUsers: () => setState(() => overlay = AppOverlay.adminUsers),
-        );
-      case AppOverlay.adminCategories:
-        return AdminCategoriesScreen(
-          onBack: () => setState(() => overlay = AppOverlay.adminDashboard),
-          onAddCategory: () => setState(() {
-            adminEditingCategory = null;
-            overlay = AppOverlay.adminCategoryForm;
-          }),
-          onEditCategory: (cat) => setState(() {
-            adminEditingCategory = cat;
-            overlay = AppOverlay.adminCategoryForm;
-          }),
-          onAddSignToCategory: (cat) => setState(() {
-            adminEditingLesson = null;
-            adminInitialCategoryId = cat.id;
-            overlay = AppOverlay.adminLessonForm;
-          }),
-        );
-      case AppOverlay.adminCategoryForm:
-        return AdminCategoryFormScreen(
-          existingCategory: adminEditingCategory,
-          onBack: () => setState(() => overlay = AppOverlay.adminCategories),
-          onSaved: () => setState(() => overlay = AppOverlay.adminCategories),
-        );
-      case AppOverlay.adminLessons:
-        return AdminLessonsScreen(
-          onBack: () => setState(() => overlay = AppOverlay.adminDashboard),
-          onAddLesson: () => setState(() {
-            adminEditingLesson = null;
-            adminInitialCategoryId = null;
-            overlay = AppOverlay.adminLessonForm;
-          }),
-          onEditLesson: (lesson) => setState(() {
-            adminEditingLesson = lesson;
-            adminInitialCategoryId = lesson.categoryId;
-            overlay = AppOverlay.adminLessonForm;
-          }),
-        );
-      case AppOverlay.adminLessonForm:
-        return AdminLessonFormScreen(
-          existingLesson: adminEditingLesson,
-          initialCategoryId: adminInitialCategoryId,
-          onBack: () {
-            final returnToCategories = adminInitialCategoryId != null &&
-                adminEditingLesson == null;
-            setState(() {
-              overlay = returnToCategories
-                  ? AppOverlay.adminCategories
-                  : AppOverlay.adminLessons;
-            });
-          },
-          onSaved: () {
-            final returnToCategories = adminInitialCategoryId != null &&
-                adminEditingLesson == null;
-            setState(() {
-              overlay = returnToCategories
-                  ? AppOverlay.adminCategories
-                  : AppOverlay.adminLessons;
-            });
-          },
-        );
-      case AppOverlay.adminUsers:
-        return AdminUsersScreen(
-          onBack: () => setState(() => overlay = AppOverlay.adminDashboard),
-        );
+
       case AppOverlay.lessonDetail:
         if (selectedCategory == null) {
           return _buildFallbackBody('No lesson category selected yet.');
@@ -600,6 +566,7 @@ class _RootAppState extends ConsumerState<RootApp> {
               onViewAll: () => setState(() => current = AppScreen.lessons),
               onOpenLesson: (lesson) =>
                   unawaited(_openLessonWithMedia(lesson)),
+              onLanguageChanged: _changeLanguage,
             );
           case AppScreen.lessons:
             return LessonsScreen(
@@ -628,24 +595,8 @@ class _RootAppState extends ConsumerState<RootApp> {
               signsLearned: signsLearned,
               streak: streak,
               totalHours: totalHours,
-              isAdmin: auth.isAdmin,
-              onOpenAdmin: auth.isAdmin
-                  ? () => setState(() => overlay = AppOverlay.adminDashboard)
-                  : null,
-              onLanguageChanged: (value) async {
-                language = value;
-                final uid = auth.userId;
-                if (uid != null) {
-                  await ref
-                      .read(userRepositoryProvider)
-                      .updateLanguage(uid, value);
-                  ref
-                      .read(authSessionProvider.notifier)
-                      .applyLanguagePreference(value);
-                }
-                await persist();
-                setState(() {});
-              },
+
+              onLanguageChanged: _changeLanguage,
               onProfileSaved: (name, email) async {
                 userName = name;
                 userEmail = email;
@@ -881,11 +832,11 @@ class _RootAppState extends ConsumerState<RootApp> {
                         ],
                       ),
                     ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 4, 16, 14),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
                       child: Text(
-                        'ETHIOPIAN NATIONAL ASSOCIATION OF THE DEAF',
-                        style: TextStyle(
+                        'ETHIOPIAN NATIONAL ASSOCIATION OF THE DEAF'.tr(language),
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.8,
@@ -900,7 +851,7 @@ class _RootAppState extends ConsumerState<RootApp> {
                     ),
                     _menuItem(
                       icon: Icons.person_outline,
-                      title: 'Profile',
+                      title: 'Profile'.tr(language),
                       onTap: () {
                         Navigator.of(context).pop();
                         setState(() {
@@ -912,34 +863,41 @@ class _RootAppState extends ConsumerState<RootApp> {
                     ),
                     _menuItem(
                       icon: Icons.settings_outlined,
-                      title: 'Settings',
-                      onTap: () => _showDrawerMessage('Settings'),
+                      title: 'Settings'.tr(language),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        setState(() {
+                          current = AppScreen.profile;
+                          tabIndex = AppScreen.profile.index;
+                          overlay = AppOverlay.none;
+                        });
+                      },
                     ),
-                    _sectionTitle('HELP & SUPPORT'),
+                    _sectionTitle('HELP & SUPPORT'.tr(language)),
                     _menuItem(
                       icon: Icons.help_outline,
-                      title: 'Help',
+                      title: 'Help'.tr(language),
                       onTap: () => _openDrawerInfo(DrawerInfoPage.help),
                     ),
                     _menuItem(
                       icon: Icons.menu_book_outlined,
-                      title: 'How to use',
+                      title: 'How to use'.tr(language),
                       onTap: () => _openDrawerInfo(DrawerInfoPage.howToUse),
                     ),
                     _menuItem(
                       icon: Icons.contact_support_outlined,
-                      title: 'Contact ENAD',
+                      title: 'Contact ENAD'.tr(language),
                       onTap: () => _openDrawerInfo(DrawerInfoPage.contactEnad),
                     ),
-                    _sectionTitle('ABOUT'),
+                    _sectionTitle('ABOUT'.tr(language)),
                     _menuItem(
                       icon: Icons.info_outline,
-                      title: 'App Info',
+                      title: 'App Info'.tr(language),
                       onTap: () => _openDrawerInfo(DrawerInfoPage.appInfo),
                     ),
                     _menuItem(
                       icon: Icons.tag,
-                      title: 'Version',
+                      title: 'Version'.tr(language),
                       trailing: const Text(
                         DrawerInfoScreen.appVersion,
                         style: TextStyle(color: kOnSurfaceVariant),
@@ -948,7 +906,7 @@ class _RootAppState extends ConsumerState<RootApp> {
                     ),
                     _menuItem(
                       icon: Icons.stars_outlined,
-                      title: 'Credits',
+                      title: 'Credits'.tr(language),
                       onTap: () => _openDrawerInfo(DrawerInfoPage.credits),
                     ),
                   ],
@@ -980,7 +938,7 @@ class _RootAppState extends ConsumerState<RootApp> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Text(
-          message,
+          message.tr(language),
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 18, color: Colors.black54),
         ),
@@ -1018,15 +976,8 @@ class _RootAppState extends ConsumerState<RootApp> {
     Navigator.of(context).pop();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DrawerInfoScreen(page: page),
+        builder: (_) => DrawerInfoScreen(page: page, language: language),
       ),
     );
-  }
-
-  void _showDrawerMessage(String title) {
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$title coming soon')));
   }
 }

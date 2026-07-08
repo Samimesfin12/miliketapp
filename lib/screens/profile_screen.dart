@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -13,8 +14,6 @@ class ProfileScreen extends StatefulWidget {
     required this.onLanguageChanged,
     required this.onProfileSaved,
     required this.onLogout,
-    this.onOpenAdmin,
-    this.isAdmin = false,
   });
 
   final String language;
@@ -26,8 +25,6 @@ class ProfileScreen extends StatefulWidget {
   final ValueChanged<String> onLanguageChanged;
   final void Function(String name, String email) onProfileSaved;
   final VoidCallback onLogout;
-  final VoidCallback? onOpenAdmin;
-  final bool isAdmin;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -78,11 +75,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onPressed: () {},
                   icon: const Icon(Icons.arrow_back, color: Colors.white),
                 ),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Profile',
+                    'Profile'.tr(widget.language),
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -99,11 +96,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 _buildProgressCard(),
                 const SizedBox(height: 22),
-                const Padding(
-                  padding: EdgeInsets.only(left: 4, bottom: 10),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 10),
                   child: Text(
-                    'Settings',
-                    style: TextStyle(
+                    'Settings'.tr(widget.language),
+                    style: const TextStyle(
                       color: Color(0xFF1E1E1E),
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
@@ -112,26 +109,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 _buildLanguageRow(),
                 const SizedBox(height: 12),
-                if (widget.isAdmin && widget.onOpenAdmin != null) ...[
-                  _settingsTile(
-                    icon: Icons.admin_panel_settings_outlined,
-                    title: 'Admin Panel',
-                    subtitle: 'Manage lessons, users, and content',
-                    onTap: widget.onOpenAdmin!,
-                  ),
-                  const SizedBox(height: 12),
-                ],
                 _settingsTile(
                   icon: Icons.edit_outlined,
-                  title: 'Edit Profile',
-                  subtitle: 'Update your name and password',
+                  title: 'Edit Profile'.tr(widget.language),
+                  subtitle: 'Update your name and password'.tr(widget.language),
                   onTap: () => setState(() => editMode = true),
                 ),
                 const SizedBox(height: 12),
                 _settingsTile(
                   icon: Icons.settings_outlined,
-                  title: 'Account Settings',
-                  subtitle: 'Manage your account preferences',
+                  title: 'Account Settings'.tr(widget.language),
+                  subtitle: 'Manage your account preferences'.tr(widget.language),
                   onTap: () => _showSoonMessage('Account Settings'),
                 ),
                 const SizedBox(height: 12),
@@ -159,11 +147,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onPressed: () => setState(() => editMode = false),
                   icon: const Icon(Icons.arrow_back, color: Colors.white),
                 ),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Profile',
+                    'Profile'.tr(widget.language),
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
                       fontSize: 20,
@@ -228,10 +216,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Center(
+                Center(
                   child: Text(
-                    'Change Profile Picture',
-                    style: TextStyle(
+                    'Change Profile Picture'.tr(widget.language),
+                    style: const TextStyle(
                       color: Color(0xFF0E5A36),
                       fontSize: 18,
                       fontWeight: FontWeight.w500,
@@ -239,20 +227,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 28),
-                const Text(
-                  'Full Name',
-                  style: TextStyle(
+                Text(
+                  'Full Name'.tr(widget.language),
+                  style: const TextStyle(
                     color: Color(0xFF272727),
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 8),
-                _inputBox(controller: nameCtrl, hint: 'qwertyui'),
+                _inputBox(controller: nameCtrl, hint: 'Your name'.tr(widget.language)),
                 const SizedBox(height: 20),
-                const Text(
-                  'Email Address',
-                  style: TextStyle(
+                Text(
+                  'Email Address'.tr(widget.language),
+                  style: const TextStyle(
                     color: Color(0xFF272727),
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
@@ -261,9 +249,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 8),
                 _inputBox(controller: emailCtrl, hint: 'user@example.com'),
                 const SizedBox(height: 26),
-                const Text(
-                  'SECURITY',
-                  style: TextStyle(
+                Text(
+                  'SECURITY'.tr(widget.language),
+                  style: const TextStyle(
                     color: Color(0xFF636363),
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -271,9 +259,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'Current Password',
-                  style: TextStyle(
+                Text(
+                  'Current Password'.tr(widget.language),
+                  style: const TextStyle(
                     color: Color(0xFF272727),
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
@@ -295,9 +283,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'New Password',
-                  style: TextStyle(
+                Text(
+                  'New Password'.tr(widget.language),
+                  style: const TextStyle(
                     color: Color(0xFF272727),
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
@@ -333,9 +321,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
-                      'Save Changes',
-                      style: TextStyle(
+                    child: Text(
+                      'Save Changes'.tr(widget.language),
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
@@ -433,9 +421,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
-                      'Track your progress',
-                      style: TextStyle(
+                    Text(
+                      'Track your progress'.tr(widget.language),
+                      style: const TextStyle(
                         color: Color(0xFFD2E4D8),
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -452,18 +440,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Expanded(
                 child: _metricCard(
                   value: widget.signsLearned,
-                  label: 'SIGNS\nLEARNED',
+                  label: 'SIGNS\nLEARNED'.tr(widget.language),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _metricCard(value: widget.streak, label: 'DAY STREAK'),
+                child: _metricCard(
+                  value: widget.streak,
+                  label: 'DAY STREAK'.tr(widget.language),
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _metricCard(
                   value: widget.totalHours,
-                  label: 'PRACTICED',
+                  label: 'PRACTICED'.tr(widget.language),
                 ),
               ),
             ],
@@ -529,9 +520,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: const Icon(Icons.language, color: Color(0xFF238A52)),
           ),
           const SizedBox(width: 12),
-          const Text(
-            'Language',
-            style: TextStyle(
+          Text(
+            'Language'.tr(widget.language),
+            style: const TextStyle(
               color: Color(0xFF1C1C1C),
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -551,14 +542,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   Expanded(
                     child: _languagePill(
-                      label: 'English',
+                      label: 'English'.tr(widget.language),
                       active: widget.language == 'en',
                       onTap: () => widget.onLanguageChanged('en'),
                     ),
                   ),
                   Expanded(
                     child: _languagePill(
-                      label: 'Amharic',
+                      label: 'Amharic'.tr(widget.language),
                       active: widget.language == 'am',
                       onTap: () => widget.onLanguageChanged('am'),
                     ),
@@ -679,24 +670,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
             border: Border.all(color: const Color(0xFFEEDDE0)),
           ),
           child: Row(
-            children: const [
-              CircleAvatar(
+            children: [
+              const CircleAvatar(
                 radius: 22,
                 backgroundColor: Color(0xFFF5DFE3),
                 child: Icon(Icons.logout, color: Color(0xFFBE2C3C)),
               ),
-              SizedBox(width: 12),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Log Out',
-                  style: TextStyle(
+                  'Log Out'.tr(widget.language),
+                  style: const TextStyle(
                     color: Color(0xFFB91F32),
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              Icon(Icons.chevron_right, color: Color(0xFFC26772)),
+              const Icon(Icons.chevron_right, color: Color(0xFFC26772)),
             ],
           ),
         ),
@@ -707,6 +698,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showSoonMessage(String title) {
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text('$title coming soon')));
+    ).showSnackBar(SnackBar(content: Text('${title.tr(widget.language)} ${'coming soon'.tr(widget.language)}')));
   }
 }

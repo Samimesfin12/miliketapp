@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,7 @@ import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/backend/controllers/ai_practice_controller.dart';
 import 'package:esl_learning_flutter/backend/ai/mediapipe_processor.dart';
 import 'package:esl_learning_flutter/backend/providers.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class AIPracticeScreen extends ConsumerStatefulWidget {
   const AIPracticeScreen({
@@ -25,6 +27,7 @@ class AIPracticeScreen extends ConsumerStatefulWidget {
 
 class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
   CameraController? _cameraController;
+  StreamSubscription<List<double>?>? _landmarkSubscription;
   bool _isCameraInitialized = false;
   bool _isProcessing = false;
   
@@ -37,9 +40,13 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
   List<String> _feedback = ["Initializing hand tracker..."];
 
   // Activity flow states
-  // Activity flow states
-  bool _hasSavedFeedback = false; // Prevents logging database rows repeatedly per frame
-  int _emptyFrameCount = 0; // Number of consecutive frames without hand detection
+  bool _hasSavedFeedback = false;
+  DateTime? _lastHandDetectedTime;
+
+  // Debug states
+  int _processedFramesCount = 0;
+  bool _isHandDetected = false;
+  int _sensorOrientation = 0;
 
   @override
   void initState() {
@@ -69,6 +76,16 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
       if (template != null) {
         await ref.read(aiPracticeControllerProvider).preloadTemplate(widget.lesson.sign);
       }
+
+      // Initialize on-device hand tracker before opening the camera stream.
+      await MediaPipeProcessor.ensureInitialized();
+
+      _landmarkSubscription = MediaPipeProcessor.landmarkUpdates.listen(
+        _onLandmarksUpdated,
+        onError: (Object error) {
+          debugPrint('Landmark stream error: $error');
+        },
+      );
       
       // 2. Initialize camera permission & controller
       await _initializeCamera();
@@ -93,13 +110,15 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
         orElse: () => cameras.first,
       );
 
+      _sensorOrientation = frontCam.sensorOrientation;
+
+      // Default format matches the hand_landmarker example and works better on
+      // emulators (often NV21 as 1–2 planes) than forcing YUV420.
       _cameraController = CameraController(
         frontCam,
         ResolutionPreset.medium,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.yuv420,
       );
-
       await _cameraController!.initialize();
       if (!mounted) return;
 
@@ -110,12 +129,11 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
       // 3. Hook into Camera Frame Stream
       DateTime lastProcessedTime = DateTime.now();
 
-      _cameraController!.startImageStream((CameraImage image) async {
+      _cameraController!.startImageStream((CameraImage image) {
         final now = DateTime.now();
         
-        // Throttling Logic:
-        // - Throttle to 120ms (~8 FPS) to save CPU/GPU and prevent native crashes.
-        if (now.difference(lastProcessedTime).inMilliseconds < 120) {
+        // Throttle to 10 FPS — matches sign_practice frameThrottleInterval.
+        if (now.difference(lastProcessedTime).inMilliseconds < 100) {
           return;
         }
 
@@ -124,61 +142,12 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
         lastProcessedTime = now;
 
         try {
-          // Process current frame coordinates
-          final flatCoords = MediaPipeProcessor.processCameraImage(image, frontCam);
-          
-          if (flatCoords != null) {
-            _emptyFrameCount = 0; // Hand detected! Reset grace counter
-            
-            if (_hasTemplate) {
-              // Practice Mode: run on-device evaluation
-              final controller = ref.read(aiPracticeControllerProvider);
-              final result = await controller.processFrame(flatCoords, widget.lesson.sign);
-
-              if (result != null && mounted) {
-                final double score = (result['target_confidence'] as num).toDouble() * 100;
-                final bool correct = result['is_correct'] as bool;
-                
-                setState(() {
-                  _confidence = score;
-                  _isCorrect = correct;
-                  _feedback = List<String>.from(result['feedback']);
-                });
-
-                // Write result to local SQLite feedback table once when matching
-                if (correct && !_hasSavedFeedback) {
-                  _hasSavedFeedback = true;
-                  final int userId = ref.read(authSessionProvider).userId ?? 1;
-                  await controller.saveFeedback(
-                    userId: userId,
-                    targetSign: widget.lesson.sign,
-                    predictedSign: widget.lesson.sign,
-                    confidence: score / 100.0,
-                    isCorrect: true,
-                  );
-                } else if (!correct) {
-                  _hasSavedFeedback = false; // Reset log trigger when hand lets go
-                }
-              }
-            }
-          } else {
-            // Hand not detected in this frame
-            _emptyFrameCount++;
-            
-            // Only clear active match and buffer if hand is missing for 15+ consecutive frames
-            if (_emptyFrameCount >= 15) {
-              if (mounted) {
-                setState(() {
-                  _confidence = 0.0;
-                  _isCorrect = false;
-                  _feedback = ["Analysing... Keep your hand within the frame."];
-                });
-                ref.read(aiPracticeControllerProvider).clearBuffer();
-              }
-            }
+          MediaPipeProcessor.feedCameraImage(image, frontCam);
+          if (mounted) {
+            setState(() => _processedFramesCount++);
           }
-        } catch (e) {
-          // Frame stream parsing catch block
+        } catch (e, st) {
+          debugPrint("Error in camera frame stream processor: $e\n$st");
         } finally {
           _isProcessing = false;
         }
@@ -196,20 +165,87 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
     }
   }
 
+  Future<void> _onLandmarksUpdated(List<double>? flatCoords) async {
+    if (!mounted) return;
+
+    final handDetected = flatCoords != null;
+    setState(() => _isHandDetected = handDetected);
+
+    if (flatCoords != null) {
+      _lastHandDetectedTime = DateTime.now();
+
+      if (!_hasTemplate) {
+        setState(() {
+          _feedback = [
+            'Hand detected — tracking is active.',
+            'This sign is not trained yet. Try Numbers → Two or Three for full evaluation.',
+          ];
+        });
+        return;
+      }
+
+      final controller = ref.read(aiPracticeControllerProvider);
+      final result = await controller.processFrame(flatCoords, widget.lesson.sign);
+
+      if (result != null && mounted) {
+        final double score = (result['target_confidence'] as num).toDouble() * 100;
+        final bool correct = result['is_correct'] as bool;
+
+        setState(() {
+          _confidence = score;
+          _isCorrect = correct;
+          _feedback = List<String>.from(result['feedback']);
+        });
+
+        if (correct && !_hasSavedFeedback) {
+          _hasSavedFeedback = true;
+          final int userId = ref.read(authSessionProvider).userId ?? 1;
+          await controller.saveFeedback(
+            userId: userId,
+            targetSign: widget.lesson.sign,
+            predictedSign: widget.lesson.sign,
+            confidence: score / 100.0,
+            isCorrect: true,
+          );
+        } else if (!correct) {
+          _hasSavedFeedback = false;
+        }
+      }
+      return;
+    }
+
+    final handMissingMs = _lastHandDetectedTime == null
+        ? 1501
+        : DateTime.now().difference(_lastHandDetectedTime!).inMilliseconds;
+    if (handMissingMs >= 1500 && mounted) {
+      setState(() {
+        _confidence = 0.0;
+        _isCorrect = false;
+        _feedback = [
+          'No hand detected.',
+          'Hold your hand clearly in front of the camera.',
+          if (Platform.isAndroid)
+            'Emulator tip: Extended Controls → Camera → set Front to Webcam.',
+        ];
+      });
+      ref.read(aiPracticeControllerProvider).clearBuffer();
+    }
+  }
+
   void _showPermissionErrorDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('Camera Permission Required'),
-        content: const Text('Camera access is required to practice sign language gestures.'),
+        title: Text('Camera Permission Required'.tr(widget.language)),
+        content: Text('Camera access is required to practice sign language gestures.'.tr(widget.language)),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
               _stopAndRelease(); // Release resources and return home
             },
-            child: const Text('OK'),
+            child: Text('OK'.tr(widget.language)),
           ),
         ],
       ),
@@ -221,15 +257,15 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('AI Practice Unavailable'),
-        content: const Text('Failed to load the hand landmarker tracking model or activate the camera.'),
+        title: Text('AI Practice Unavailable'.tr(widget.language)),
+        content: Text('Failed to load the hand landmarker tracking model or activate the camera.'.tr(widget.language)),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
               _stopAndRelease(); // Release resources and return home
             },
-            child: const Text('OK'),
+            child: Text('OK'.tr(widget.language)),
           ),
         ],
       ),
@@ -237,8 +273,10 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
   }
 
   void _stopAndRelease() {
+    _landmarkSubscription?.cancel();
+    _landmarkSubscription = null;
     _cameraController?.dispose();
-    MediaPipeProcessor.dispose(); // Add this line
+    MediaPipeProcessor.dispose();
     try {
       ref.read(aiPracticeControllerProvider).clearBuffer();
     } catch (_) {}
@@ -247,8 +285,10 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
 
   @override
   void dispose() {
+    _landmarkSubscription?.cancel();
+    _landmarkSubscription = null;
     _cameraController?.dispose();
-    MediaPipeProcessor.dispose(); // Add this line
+    MediaPipeProcessor.dispose();
     try {
       ref.read(aiPracticeControllerProvider).clearBuffer();
     } catch (_) {}
@@ -262,19 +302,19 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
         appBar: AppBar(
           backgroundColor: kPrimary,
           foregroundColor: Colors.white,
-          title: Text('Practice: ${widget.lesson.sign.toUpperCase()}'),
+          title: Text('${'Practice'.tr(widget.language)}: ${widget.language == 'en' ? widget.lesson.sign.toUpperCase() : widget.lesson.signAm}'),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: _stopAndRelease,
           ),
         ),
-        body: const Center(
+        body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Opening Camera Feed...'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text('Opening Camera Feed...'.tr(widget.language)),
             ],
           ),
         ),
@@ -285,7 +325,7 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
       appBar: AppBar(
         backgroundColor: kPrimary,
         foregroundColor: Colors.white,
-        title: Text('Practice: ${widget.lesson.sign.toUpperCase()}'),
+        title: Text('${'Practice'.tr(widget.language)}: ${widget.language == 'en' ? widget.lesson.sign.toUpperCase() : widget.lesson.signAm}'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: _stopAndRelease,
@@ -323,17 +363,51 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
                       ],
                     ),
                     child: Text(
-                      !_hasTemplate 
-                          ? 'UNTRAINED' 
-                          : _isCorrect 
-                              ? 'CORRECT!' 
-                              : 'ANALYSING...',
+                      (!_hasTemplate
+                          ? (_isHandDetected ? 'TRACKING' : 'UNTRAINED')
+                          : _isCorrect
+                              ? 'CORRECT!'
+                              : (_isHandDetected ? 'ANALYSING...' : 'NO HAND')).tr(widget.language),
                       style: const TextStyle(
                         color: Colors.white, 
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
                         letterSpacing: 0.5,
                       ),
+                    ),
+                  ),
+                ),
+
+                // Debug Info Overlay (Helpful for emulators/developers)
+                Positioned(
+                  top: 16,
+                  right: 16,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Frames: $_processedFramesCount',
+                          style: const TextStyle(color: Colors.white70, fontSize: 10),
+                        ),
+                        Text(
+                          'Hand: ${_isHandDetected ? "DETECTED" : "NO HAND"}',
+                          style: TextStyle(
+                            color: _isHandDetected ? Colors.greenAccent : Colors.redAccent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'Angle: $_sensorOrientation°',
+                          style: const TextStyle(color: Colors.white70, fontSize: 10),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -349,10 +423,10 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
-                      'Keep your hand within the frame',
+                    child: Text(
+                      'Keep your hand within the frame'.tr(widget.language),
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -370,7 +444,7 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
                   child: ElevatedButton.icon(
                     onPressed: _stopAndRelease, // Release resources and return Home
                     icon: const Icon(Icons.stop, color: Colors.white),
-                    label: const Text('Stop Practice'),
+                    label: Text('Stop Practice'.tr(widget.language)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: kDanger,
                       foregroundColor: Colors.white,
@@ -405,9 +479,9 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(
-                            "EVALUATION RESULT",
-                            style: TextStyle(
+                          Text(
+                            "EVALUATION RESULT".tr(widget.language),
+                            style: const TextStyle(
                               color: Colors.white70,
                               fontWeight: FontWeight.bold,
                               fontSize: 10,
@@ -446,9 +520,9 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
                             ),
                           ),
                           const SizedBox(height: 6),
-                          const Text(
-                            "Match Confidence",
-                            style: TextStyle(color: Colors.white54, fontSize: 9),
+                          Text(
+                            "Match Confidence".tr(widget.language),
+                            style: const TextStyle(color: Colors.white54, fontSize: 9),
                           ),
                           const SizedBox(height: 10),
                           // Badge mimicking web evaluation indicator
@@ -488,11 +562,11 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  !_hasTemplate
+                                  (!_hasTemplate
                                       ? "INCOMPLETE"
                                       : _isCorrect
                                           ? "CORRECT"
-                                          : "INCORRECT",
+                                          : "INCORRECT").tr(widget.language),
                                   style: TextStyle(
                                     color: !_hasTemplate
                                         ? Colors.grey
@@ -525,9 +599,9 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Text(
-                            'DIAGNOSTIC FEEDBACK',
-                            style: TextStyle(
+                          Text(
+                            'DIAGNOSTIC FEEDBACK'.tr(widget.language),
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                               fontSize: 11,
@@ -564,7 +638,7 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          item,
+                                          item.tr(widget.language),
                                           style: const TextStyle(
                                             color: Colors.white, 
                                             fontSize: 12,

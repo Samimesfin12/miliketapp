@@ -7,12 +7,6 @@ enum AppOverlay {
   video,
   quiz,
   aiPractice,
-  adminDashboard,
-  adminCategories,
-  adminCategoryForm,
-  adminLessons,
-  adminLessonForm,
-  adminUsers,
 }
 enum QuizType { watchAndChoose, chooseVideo }
 

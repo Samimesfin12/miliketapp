@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class VideoScreen extends StatefulWidget {
   const VideoScreen({
@@ -148,9 +149,9 @@ class _VideoScreenState extends State<VideoScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Cultural context',
-                                style: TextStyle(
+                              Text(
+                                'Cultural context'.tr(widget.language),
+                                style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                   color: kPrimary,
                                 ),
@@ -188,9 +189,7 @@ class _VideoScreenState extends State<VideoScreen> {
                             color: Colors.green,
                           ),
                           label: Text(
-                            widget.language == 'en'
-                                ? 'Downloaded (Offline)'
-                                : 'ወርዷል (ከመስመር ውጭ)',
+                            'Downloaded (Offline)'.tr(widget.language),
                             style: const TextStyle(color: Colors.green),
                           ),
                         );
@@ -210,9 +209,7 @@ class _VideoScreenState extends State<VideoScreen> {
                               )
                             : const Icon(Icons.download_outlined),
                         label: Text(
-                          widget.language == 'en'
-                              ? 'Download for offline'
-                              : 'ከመስመር ውጭ ያውርዱ',
+                          'Download for offline'.tr(widget.language),
                         ),
                       );
                     },
@@ -284,18 +281,18 @@ class _VideoScreenState extends State<VideoScreen> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Practice Quiz',
-                          style: TextStyle(
+                          'Practice Quiz'.tr(widget.language),
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        SizedBox(width: 6),
-                        Icon(Icons.quiz_outlined, size: 20),
+                        const SizedBox(width: 6),
+                        const Icon(Icons.quiz_outlined, size: 20),
                       ],
                     ),
                   ),
@@ -328,9 +325,9 @@ class _VideoScreenState extends State<VideoScreen> {
                                   Icons.chevron_left,
                                   color: Colors.black,
                                 ),
-                                label: const Text(
-                                  'Previous',
-                                  style: TextStyle(
+                                label: Text(
+                                  'Previous'.tr(widget.language),
+                                  style: const TextStyle(
                                     color: Colors.black,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
@@ -352,18 +349,18 @@ class _VideoScreenState extends State<VideoScreen> {
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
-                                child: const Row(
+                                child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
-                                      'Next',
-                                      style: TextStyle(
+                                      'Next'.tr(widget.language),
+                                      style: const TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    SizedBox(width: 4),
-                                    Icon(Icons.chevron_right, size: 20),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.chevron_right, size: 20),
                                   ],
                                 ),
                               ),
@@ -378,9 +375,9 @@ class _VideoScreenState extends State<VideoScreen> {
                             color: kPrimaryDark,
                             size: 18,
                           ),
-                          label: const Text(
-                            'AI Practice',
-                            style: TextStyle(
+                          label: Text(
+                            'AI Practice'.tr(widget.language),
+                            style: const TextStyle(
                               color: kPrimaryDark,
                               fontWeight: FontWeight.w700,
                               fontSize: 13,
@@ -409,9 +406,9 @@ class _VideoScreenState extends State<VideoScreen> {
                         ),
                       ],
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        CircleAvatar(
+                        const CircleAvatar(
                           radius: 14,
                           backgroundColor: Color(0xFF506240),
                           child: Icon(
@@ -420,11 +417,11 @@ class _VideoScreenState extends State<VideoScreen> {
                             size: 16,
                           ),
                         ),
-                        SizedBox(width: 12),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Sign learned! +1 to your\nprogress',
-                            style: TextStyle(
+                            'Sign learned! +1 to your\nprogress'.tr(widget.language),
+                            style: const TextStyle(
                               color: Color(0xFF58624A),
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -432,7 +429,7 @@ class _VideoScreenState extends State<VideoScreen> {
                             ),
                           ),
                         ),
-                        Icon(Icons.close, color: Color(0xFF58624A), size: 24),
+                        const Icon(Icons.close, color: Color(0xFF58624A), size: 24),
                       ],
                     ),
                   ),
@@ -447,19 +444,19 @@ class _VideoScreenState extends State<VideoScreen> {
   String _categoryLabel(String categoryId) {
     switch (categoryId) {
       case 'greetings':
-        return 'Greetings';
+        return 'Greetings'.tr(widget.language);
       case 'family':
-        return 'Family';
+        return 'Family'.tr(widget.language);
       case 'food':
-        return 'Food';
+        return 'Food'.tr(widget.language);
       case 'shopping':
-        return 'Shopping';
+        return 'Shopping'.tr(widget.language);
       case 'emergency':
-        return 'Emergency';
+        return 'Emergency'.tr(widget.language);
       case 'numbers':
-        return 'Numbers';
+        return 'Numbers'.tr(widget.language);
       default:
-        return 'Lesson';
+        return 'Lesson'.tr(widget.language);
     }
   }
 }

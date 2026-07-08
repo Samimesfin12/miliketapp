@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
+import 'package:dio/dio.dart' show CancelToken;
 import 'package:esl_learning_flutter/backend/services/video_downloader.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
@@ -77,9 +78,11 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
 
   bool _controlsVisible = true;
   Timer? _hideControlsTimer;
-  Timer? _bufferingTimer;
+  Timer? _positionTimer;
+  CancelToken? _initCancelToken;
 
   bool _muted = false;
+  final ValueNotifier<Duration> _positionNotifier = ValueNotifier(Duration.zero);
   final double _volume = 1.0;
 
   /// Performance optimization: cache formatted time strings
@@ -123,23 +126,28 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
       );
 
   Future<List<({VideoPlayerController controller, String label})>>
-      _playbackCandidates() async {
+      _playbackCandidates(CancelToken? cancelToken) async {
     final out = <({VideoPlayerController controller, String label})>[];
     final local = widget.lesson.videoLocalPath?.trim();
+    final u = widget.lesson.videoUrl?.trim();
+
     if (local != null && local.isNotEmpty) {
       final f = File(local);
       if (await f.exists()) {
-        out.add((
-          controller: VideoPlayerController.file(
-            f,
-            videoPlayerOptions: _playerOptions,
-          ),
-          label: 'Local file: ${f.path}',
-        ));
+        if (await VideoDownloader.isValidVideoFile(f)) {
+          out.add((
+            controller: VideoPlayerController.file(
+              f,
+              videoPlayerOptions: _playerOptions,
+            ),
+            label: 'Local file: ${f.path}',
+          ));
+          return out;
+        }
+        debugPrint('Stored local file is not a valid video: $local');
       }
     }
 
-    final u = widget.lesson.videoUrl?.trim();
     if (u != null && u.isNotEmpty) {
       if (VideoDownloader.parseDriveFileId(u) != null ||
           u.startsWith('http://') ||
@@ -149,6 +157,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
           final source = await VideoDownloader().resolvePlaybackSource(
             u,
             cacheDir: cacheDir,
+            cancelToken: cancelToken,
           );
           if (source.filePath != null) {
             out.add((
@@ -179,6 +188,10 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
 
   Future<void> _initPlayer() async {
     final hadPlayer = _initialized;
+    final currentCancelToken = CancelToken();
+    _initCancelToken?.cancel();
+    _initCancelToken = currentCancelToken;
+
     setState(() {
       _error = false;
       _errorMessage = null;
@@ -190,7 +203,15 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
       await _controller.dispose();
     }
 
-    final candidates = await _playbackCandidates();
+    List<({VideoPlayerController controller, String label})> candidates;
+    try {
+      candidates = await _playbackCandidates(currentCancelToken);
+    } catch (e) {
+      if (currentCancelToken.isCancelled || !mounted) return;
+      rethrow;
+    }
+
+    if (currentCancelToken.isCancelled) return;
     if (candidates.isEmpty) {
       if (!mounted) return;
       setState(() {
@@ -208,20 +229,22 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
       final c = candidate.controller;
       try {
         debugPrint('Initializing video player: ${candidate.label}');
-        await c.initialize();
+        await c.initialize().timeout(const Duration(seconds: 6));
         await c.setLooping(true);
         c.addListener(_onVideoUpdate);
         await c.setVolume(_volume);
         await c.setPlaybackSpeed(_speedNotifier.value.value);
         _controller = c;
+        await c.seekTo(Duration.zero);
         await c.play();
         if (!mounted) {
           await c.dispose();
           return;
         }
         setState(() => _initialized = true);
+        _positionNotifier.value = Duration.zero;
+        _startPositionTimer();
         _scheduleHideControls();
-        _scheduleBufferingCheck();
         debugPrint('Video player ready: ${candidate.label}');
         return;
       } catch (e, st) {
@@ -241,21 +264,23 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     });
   }
 
-  void _scheduleBufferingCheck() {
-    _bufferingTimer?.cancel();
-    _bufferingTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (!_initialized || !mounted) return;
-      final buffered = _controller.value.buffered;
-      if (buffered.isNotEmpty) {
-        // Perform adaptive quality adjustments if needed
-        debugPrint('Buffered: ${buffered.last.end.inSeconds}s');
-      }
-    });
-  }
+  bool _wasBuffering = false;
+  bool _wasPlaying = false;
 
   void _onVideoUpdate() {
-    if (!_initialized) return;
+    if (!_initialized || !mounted) return;
     final v = _controller.value;
+    if (v.hasError) {
+      debugPrint('Video error encountered: ${v.errorDescription}');
+      if (mounted) {
+        setState(() {
+          _initialized = false;
+          _error = true;
+          _errorMessage = v.errorDescription ?? 'An error occurred during video playback.';
+        });
+      }
+      return;
+    }
     if (!v.isInitialized) return;
 
     final cb = widget.onProgressLearned;
@@ -271,7 +296,16 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
         }
       }
     }
-    if (mounted) setState(() {});
+
+    final bufferingChanged = v.isBuffering != _wasBuffering;
+    final playingChanged = v.isPlaying != _wasPlaying;
+    if (bufferingChanged || playingChanged) {
+      _wasBuffering = v.isBuffering;
+      _wasPlaying = v.isPlaying;
+      if (mounted && !v.isBuffering) {
+        setState(() {});
+      }
+    }
   }
 
   void _scheduleHideControls() {
@@ -283,20 +317,37 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     });
   }
 
+  void _startPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted || !_initialized || !_controller.value.isInitialized) return;
+      _positionNotifier.value = _controller.value.position;
+    });
+  }
+
+  void _stopPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = null;
+  }
+
   void _toggleControls() {
     setState(() => _controlsVisible = !_controlsVisible);
     if (_controlsVisible) _scheduleHideControls();
   }
 
   Future<void> _togglePlay() async {
-    if (!_initialized) return;
+    if (!_initialized || !_controller.value.isInitialized) return;
     if (_controller.value.isPlaying) {
       await _controller.pause();
     } else {
-      await _controller.play();
-      _scheduleHideControls();
+      try {
+        await _controller.play();
+        _scheduleHideControls();
+      } catch (e) {
+        debugPrint('Play failed: $e');
+      }
     }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _setSpeed(PlaybackSpeed speed) async {
@@ -363,9 +414,10 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
 
   @override
   void dispose() {
+    _initCancelToken?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _hideControlsTimer?.cancel();
-    _bufferingTimer?.cancel();
+    _stopPositionTimer();
     if (_initialized) {
       _controller.removeListener(_onVideoUpdate);
       _controller.dispose();
@@ -373,6 +425,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     _mirror.dispose();
     _speedNotifier.dispose();
     _qualityNotifier.dispose();
+    _positionNotifier.dispose();
     _timeCache.clear();
     super.dispose();
   }
@@ -442,15 +495,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
                         1.0,
                         1.0,
                       ),
-                      child: ColorFiltered(
-                        colorFilter: ColorFilter.matrix(
-                          <double>[
-                            1.1, 0, 0, 0, 5, // Red channel brightness boost
-                            0, 1.1, 0, 0, 5, // Green channel brightness boost
-                            0, 0, 1.1, 0, 5, // Blue channel brightness boost
-                            0, 0, 0, 1, 0,   // Alpha channel
-                          ],
-                        ),
+                      child: RepaintBoundary(
                         child: AspectRatio(
                           aspectRatio: aspect,
                           child: VideoPlayer(_controller),
@@ -606,15 +651,21 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
                     ),
                   ),
                   Expanded(
-                    child: Text(
-                      '${_fmt(_controller.value.position)} / ${_fmt(_controller.value.duration)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 8,
-                      ),
+                    child: ValueListenableBuilder<Duration>(
+                      valueListenable: _positionNotifier,
+                      builder: (context, position, _) {
+                        final duration = _controller.value.duration;
+                        return Text(
+                          '${_fmt(position)} / ${_fmt(duration)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 8,
+                          ),
+                        );
+                      },
                     ),
                   ),
                   if (_controlsVisible) ...[
@@ -872,6 +923,8 @@ class _AdvancedFullscreenPlayerState extends State<_AdvancedFullscreenPlayer>
   bool _controlsVisible = true;
   Timer? _hideControlsTimer;
   bool _muted = false;
+  bool _wasBuffering = false;
+  bool _wasPlaying = false;
 
   @override
   void initState() {
@@ -886,7 +939,15 @@ class _AdvancedFullscreenPlayerState extends State<_AdvancedFullscreenPlayer>
   }
 
   void _onTick() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final v = widget.controller.value;
+    final bufferingChanged = v.isBuffering != _wasBuffering;
+    final playingChanged = v.isPlaying != _wasPlaying;
+    if (bufferingChanged || playingChanged) {
+      _wasBuffering = v.isBuffering;
+      _wasPlaying = v.isPlaying;
+      setState(() {});
+    }
   }
 
   void _scheduleHideControls() {

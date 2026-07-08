@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:esl_learning_flutter/backend/database/sqlite_helper.dart';
 import 'package:esl_learning_flutter/backend/models/curriculum_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
-import 'package:esl_learning_flutter/backend/repositories/admin_repository.dart';
 import 'package:esl_learning_flutter/backend/repositories/ai_feedback_repository.dart';
 import 'package:esl_learning_flutter/backend/repositories/category_repository.dart';
 import 'package:esl_learning_flutter/backend/repositories/dictionary_repository.dart';
@@ -40,9 +39,6 @@ final lessonRepositoryProvider = Provider<LessonRepository>(
   (ref) => LessonRepository(ref.watch(sqliteHelperProvider)),
 );
 
-final adminRepositoryProvider = Provider<AdminRepository>(
-  (ref) => AdminRepository(ref.watch(sqliteHelperProvider)),
-);
 
 final culturalImageServiceProvider = Provider<CulturalImageService>(
   (ref) => CulturalImageService(),

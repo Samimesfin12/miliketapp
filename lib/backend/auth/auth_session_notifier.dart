@@ -58,7 +58,7 @@ class AuthSessionState {
       email: row['email'] as String,
       fullName: row['full_name'] as String,
       languagePreference: row['language_preference'] as String? ?? 'en',
-      isAdmin: (row['is_admin'] as int? ?? 0) == 1,
+      isAdmin: false,
     );
   }
 }

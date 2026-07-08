@@ -5,6 +5,7 @@ import 'package:esl_learning_flutter/data/app_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class QuizScreen extends StatefulWidget {
   const QuizScreen({
@@ -75,7 +76,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   backgroundColor: Colors.white,
                   foregroundColor: kPrimary,
                 ),
-                child: const Text('Continue Learning'),
+                child: Text('Continue Learning'.tr(widget.language)),
               ),
             ],
           ),
@@ -84,7 +85,7 @@ class _QuizScreenState extends State<QuizScreen> {
     }
     final q = questions[index];
     final progress = (index + 1) / questions.length;
-    final progressLabel = '${(progress * 100).round()}% Complete';
+    final progressLabel = '${(progress * 100).round()}% ${'Complete'.tr(widget.language)}';
 
     return Container(
       color: const Color(0xFFF7F5F5),
@@ -103,10 +104,10 @@ class _QuizScreenState extends State<QuizScreen> {
                     size: 24,
                   ),
                 ),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Ethiopian Sign Language',
-                    style: TextStyle(
+                    'Ethiopian Sign Language'.tr(widget.language),
+                    style: const TextStyle(
                       color: Color(0xFF114F34),
                       fontSize: 31 / 2,
                       fontWeight: FontWeight.w700,
@@ -125,7 +126,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Question ${index + 1} of ${questions.length}',
+                        '${'Question'.tr(widget.language)} ${index + 1} ${'of'.tr(widget.language)} ${questions.length}',
                         style: const TextStyle(
                           fontSize: 28 / 2,
                           color: Color(0xFF2B2B2B),
@@ -163,18 +164,18 @@ class _QuizScreenState extends State<QuizScreen> {
                   borderRadius: 14,
                 ),
                 const SizedBox(height: 18),
-                const Text(
-                  'What sign is being shown?',
-                  style: TextStyle(
+                Text(
+                  'What sign is being shown?'.tr(widget.language),
+                  style: const TextStyle(
                     fontSize: 19,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF1E1E1E),
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  'Watch the video carefully and select the\ncorrect meaning of the gesture performed.',
-                  style: TextStyle(
+                Text(
+                  'Watch the video carefully and select the\ncorrect meaning of the gesture performed.'.tr(widget.language),
+                  style: const TextStyle(
                     fontSize: 30 / 2,
                     height: 1.4,
                     color: Color(0xFF4A4A4A),
@@ -232,19 +233,19 @@ class _QuizScreenState extends State<QuizScreen> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Next Question',
-                          style: TextStyle(
+                          'Next Question'.tr(widget.language),
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 17,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        SizedBox(width: 10),
-                        Icon(Icons.arrow_forward, color: Colors.white),
+                        const SizedBox(width: 10),
+                        const Icon(Icons.arrow_forward, color: Colors.white),
                       ],
                     ),
                   ),

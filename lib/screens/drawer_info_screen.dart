@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 enum DrawerInfoPage { help, howToUse, contactEnad, appInfo, credits }
 
 class DrawerInfoScreen extends StatelessWidget {
-  const DrawerInfoScreen({super.key, required this.page});
+  const DrawerInfoScreen({super.key, required this.page, required this.language});
 
   final DrawerInfoPage page;
+  final String language;
 
   static const appVersion = '1.0.0';
 
@@ -31,11 +33,11 @@ class DrawerInfoScreen extends StatelessWidget {
   }
 
   String get _title => switch (page) {
-        DrawerInfoPage.help => 'Help',
-        DrawerInfoPage.howToUse => 'How to use',
-        DrawerInfoPage.contactEnad => 'Contact ENAD',
-        DrawerInfoPage.appInfo => 'App Info',
-        DrawerInfoPage.credits => 'Credits',
+        DrawerInfoPage.help => 'Help'.tr(language),
+        DrawerInfoPage.howToUse => 'How to use'.tr(language),
+        DrawerInfoPage.contactEnad => 'Contact ENAD'.tr(language),
+        DrawerInfoPage.appInfo => 'App Info'.tr(language),
+        DrawerInfoPage.credits => 'Credits'.tr(language),
       };
 
   List<Widget> get _body => switch (page) {
@@ -46,10 +48,10 @@ class DrawerInfoScreen extends StatelessWidget {
         DrawerInfoPage.credits => _creditsContent,
       };
 
-  static Widget _sectionTitle(String text) => Padding(
+  Widget _sectionTitle(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 8, top: 4),
         child: Text(
-          text,
+          text.tr(language),
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w800,
@@ -58,10 +60,10 @@ class DrawerInfoScreen extends StatelessWidget {
         ),
       );
 
-  static Widget _paragraph(String text) => Padding(
+  Widget _paragraph(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Text(
-          text,
+          text.tr(language),
           style: const TextStyle(
             fontSize: 14,
             height: 1.45,
@@ -70,7 +72,7 @@ class DrawerInfoScreen extends StatelessWidget {
         ),
       );
 
-  static Widget _bullet(String text) => Padding(
+  Widget _bullet(String text) => Padding(
         padding: const EdgeInsets.only(left: 8, bottom: 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,7 +87,7 @@ class DrawerInfoScreen extends StatelessWidget {
             ),
             Expanded(
               child: Text(
-                text,
+                text.tr(language),
                 style: const TextStyle(
                   fontSize: 14,
                   height: 1.4,
@@ -97,7 +99,7 @@ class DrawerInfoScreen extends StatelessWidget {
         ),
       );
 
-  static Widget _infoCard({required String title, required String body}) =>
+  Widget _infoCard({required String title, required String body}) =>
       Container(
         width: double.infinity,
         margin: const EdgeInsets.only(bottom: 14),
@@ -111,7 +113,7 @@ class DrawerInfoScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              title,
+              title.tr(language),
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 14,
@@ -120,7 +122,7 @@ class DrawerInfoScreen extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              body,
+              body.tr(language),
               style: const TextStyle(
                 fontSize: 13,
                 height: 1.4,
@@ -131,7 +133,7 @@ class DrawerInfoScreen extends StatelessWidget {
         ),
       );
 
-  static List<Widget> get _helpContent => [
+  List<Widget> get _helpContent => [
         _infoCard(
           title: 'Welcome to Miliketapp',
           body:
@@ -172,7 +174,7 @@ class DrawerInfoScreen extends StatelessWidget {
         ),
       ];
 
-  static List<Widget> get _howToUseContent => [
+  List<Widget> get _howToUseContent => [
         _paragraph(
           'Follow these steps to get the most from Miliketapp. '
           'You can learn at your own pace—repeat videos as often as you need.',
@@ -196,7 +198,7 @@ class DrawerInfoScreen extends StatelessWidget {
         _bullet('Use Previous / Next on the video screen to move through a category.'),
       ];
 
-  static List<Widget> get _contactContent => [
+  List<Widget> get _contactContent => [
         _infoCard(
           title: 'Ethiopian National Association of the Deaf (ENAD)',
           body:
@@ -229,7 +231,7 @@ class DrawerInfoScreen extends StatelessWidget {
         ),
       ];
 
-  static List<Widget> get _appInfoContent => [
+  List<Widget> get _appInfoContent => [
         Center(
           child: Container(
             width: 72,
@@ -246,22 +248,22 @@ class DrawerInfoScreen extends StatelessWidget {
             ),
           ),
         ),
-        const Center(
+        Center(
           child: Text(
-            'Miliketapp',
-            style: TextStyle(
+            'Miliketapp'.tr(language),
+            style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
               color: kOnSurface,
             ),
           ),
         ),
-        const Center(
+        Center(
           child: Padding(
-            padding: EdgeInsets.only(top: 4, bottom: 20),
+            padding: const EdgeInsets.only(top: 4, bottom: 20),
             child: Text(
-              'Ethiopian Sign Language',
-              style: TextStyle(fontSize: 14, color: kOnSurfaceVariant),
+              'Ethiopian Sign Language'.tr(language),
+              style: const TextStyle(fontSize: 14, color: kOnSurfaceVariant),
             ),
           ),
         ),
@@ -291,7 +293,7 @@ class DrawerInfoScreen extends StatelessWidget {
         ),
       ];
 
-  static List<Widget> get _creditsContent => [
+  List<Widget> get _creditsContent => [
         _paragraph(
           'Miliketapp is made possible through collaboration with the Deaf community, '
           'educators, and technology volunteers.',

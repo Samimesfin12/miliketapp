@@ -4,11 +4,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:esl_learning_flutter/backend/auth/auth_session_notifier.dart';
 import 'package:esl_learning_flutter/backend/providers.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 enum AuthView { signin, signup, forgot, reset }
 
 class AuthenticationScreen extends ConsumerStatefulWidget {
-  const AuthenticationScreen({super.key});
+  const AuthenticationScreen({super.key, this.initialLanguage});
+
+  final String? initialLanguage;
 
   @override
   ConsumerState<AuthenticationScreen> createState() =>
@@ -22,7 +25,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
   static const Color _signInOrange = Color(0xFFB85C2A);
   static const Color _mutedFooter = Color(0xFF8BC4A8);
 
-  String language = 'en';
+  late String language;
   AuthView view = AuthView.signin;
   bool _signInBusy = false;
   bool _signUpBusy = false;
@@ -36,6 +39,12 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
   final resetCodeCtrl = TextEditingController();
   final newPassCtrl = TextEditingController();
   final newPassConfirmCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    language = widget.initialLanguage ?? 'en';
+  }
 
   @override
   void dispose() {
@@ -71,9 +80,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
                   _welcomeBlock(),
                   const SizedBox(height: 10),
                   Text(
-                    language == 'en'
-                        ? 'Learn Ethiopian Sign Language at your own pace'
-                        : 'የኢትዮጵያ የምልክት ቋንቋን በራስዎ ፍጥነት ይማሩ',
+                    'Learn Ethiopian Sign Language at your own pace'.tr(language),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
@@ -120,7 +127,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  'RESET DB',
+                  'RESET DB'.tr(language),
                   style: TextStyle(
                     color: _mutedFooter.withValues(alpha: 0.95),
                     fontSize: 12,
@@ -140,18 +147,18 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reset local data?'),
-        content: const Text(
-          'This clears saved preferences on this device (login state, progress, etc.).',
+        title: Text('Reset local data?'.tr(language)),
+        content: Text(
+          'This clears saved preferences on this device (login state, progress, etc.).'.tr(language),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel'.tr(language)),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Reset'),
+            child: Text('Reset'.tr(language)),
           ),
         ],
       ),
@@ -162,7 +169,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
     ref.read(authSessionProvider.notifier).signOut();
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Local data cleared. Restart the app.')),
+      SnackBar(content: Text('Local data cleared. Restart the app.'.tr(language))),
     );
   }
 
@@ -227,7 +234,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
     return Column(
       children: [
         Text(
-          language == 'en' ? 'Welcome to' : 'እንኳን ደህና መጡ',
+          'Welcome to'.tr(language),
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: Colors.white,
@@ -358,41 +365,25 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
 
     // Validate email is not empty
     if (email.isEmpty) {
-      _showError(
-        language == 'en'
-            ? 'Please enter your email address'
-            : 'እባክዎ ኢሜይል ያስገቡ',
-      );
+      _showError('Please enter your email address'.tr(language));
       return;
     }
 
     // Validate email format
     if (!_isValidEmail(email)) {
-      _showError(
-        language == 'en'
-            ? 'Please enter a valid email address'
-            : 'ትክክለኛ ኢሜይል ያስገቡ',
-      );
+      _showError('Please enter a valid email address'.tr(language));
       return;
     }
 
     // Validate password is not empty
     if (password.isEmpty) {
-      _showError(
-        language == 'en'
-            ? 'Please enter your password'
-            : 'እባክዎ የይለፍ ቃልዎን ያስገቡ',
-      );
+      _showError('Please enter your password'.tr(language));
       return;
     }
 
     // Validate password length
     if (password.length < 6) {
-      _showError(
-        language == 'en'
-            ? 'Password must be at least 6 characters'
-            : 'የይለፍ ቃል ቢያንስ 6 ቁምፊ መሆን አለበት',
-      );
+      _showError('Password must be at least 6 characters'.tr(language));
       return;
     }
 
@@ -422,81 +413,49 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
 
     // Validate name is not empty
     if (name.isEmpty) {
-      _showError(
-        language == 'en'
-            ? 'Please enter your full name'
-            : 'እባክዎ ሙሉ ስምዎን ያስገቡ',
-      );
+      _showError('Please enter your full name'.tr(language));
       return;
     }
 
     // Validate name length
     if (name.length < 2) {
-      _showError(
-        language == 'en'
-            ? 'Name must be at least 2 characters'
-            : 'ስም ቢያንስ 2 ቁምፊ መሆን አለበት',
-      );
+      _showError('Name must be at least 2 characters'.tr(language));
       return;
     }
 
     // Validate email is not empty
     if (email.isEmpty) {
-      _showError(
-        language == 'en'
-            ? 'Please enter your email address'
-            : 'እባክዎ ኢሜይል ያስገቡ',
-      );
+      _showError('Please enter your email address'.tr(language));
       return;
     }
 
     // Validate email format
     if (!_isValidEmail(email)) {
-      _showError(
-        language == 'en'
-            ? 'Please enter a valid email address'
-            : 'ትክክለኛ ኢሜይል ያስገቡ',
-      );
+      _showError('Please enter a valid email address'.tr(language));
       return;
     }
 
     // Validate password is not empty
     if (password.isEmpty) {
-      _showError(
-        language == 'en'
-            ? 'Please enter a password'
-            : 'እባክዎ የይለፍ ቃል ያስገቡ',
-      );
+      _showError('Please enter a password'.tr(language));
       return;
     }
 
     // Validate password length
     if (password.length < 6) {
-      _showError(
-        language == 'en'
-            ? 'Password must be at least 6 characters'
-            : 'የይለፍ ቃል ቢያንስ 6 ቁምፊ መሆን አለበት',
-      );
+      _showError('Password must be at least 6 characters'.tr(language));
       return;
     }
 
     // Validate confirm password is not empty
     if (confirmPassword.isEmpty) {
-      _showError(
-        language == 'en'
-            ? 'Please confirm your password'
-            : 'እባክዎ የይለፍ ቃልዎን ያረጋግጡ',
-      );
+      _showError('Please confirm your password'.tr(language));
       return;
     }
 
     // Validate passwords match
     if (password != confirmPassword) {
-      _showError(
-        language == 'en'
-            ? 'Passwords do not match'
-            : 'የይለፍ ቃሎቹ ምንም አይመሳሰሉም',
-      );
+      _showError('Passwords do not match'.tr(language));
       return;
     }
 
@@ -526,18 +485,18 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
 
   Widget _buildSignIn() {
     return _card(
-      title: language == 'en' ? 'Sign In' : 'ግባ',
+      title: 'Sign In'.tr(language),
       children: [
         _labeledField(
-          label: language == 'en' ? 'Email' : 'ኢሜይል',
+          label: 'Email'.tr(language),
           controller: emailCtrl,
           hint: 'your@email.com',
         ),
         const SizedBox(height: 18),
         _labeledField(
-          label: language == 'en' ? 'Password' : 'የይለፍ ቃል',
+          label: 'Password'.tr(language),
           controller: passCtrl,
-          hint: language == 'en' ? 'Enter password' : 'የይለፍ ቃል ያስገቡ',
+          hint: 'Enter password'.tr(language),
           obscure: true,
         ),
         const SizedBox(height: 8),
@@ -553,7 +512,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
                 fontSize: 15,
               ),
             ),
-            child: Text(language == 'en' ? 'Forgot password?' : 'የይለፍ ቃል ረሱ?'),
+            child: Text('Forgot password?'.tr(language)),
           ),
         ),
         const SizedBox(height: 8),
@@ -580,7 +539,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
                     ),
                   )
                 : Text(
-                    language == 'en' ? 'Sign In' : 'ግባ',
+                    'Sign In'.tr(language),
                     style: const TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
@@ -590,7 +549,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
         ),
         const SizedBox(height: 20),
         Text(
-          language == 'en' ? "Don't have an account?" : 'መለያ የሎዎት?',
+          "Don't have an account?".tr(language),
           textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.white, fontSize: 15),
         ),
@@ -608,7 +567,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
               ),
             ),
             child: Text(
-              language == 'en' ? 'Sign Up' : 'ይመዝገቡ',
+              'Sign Up'.tr(language),
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
           ),
@@ -619,31 +578,31 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
 
   Widget _buildSignUp() {
     return _card(
-      title: language == 'en' ? 'Create Account' : 'መለያ ይፍጠሩ',
+      title: 'Create Account'.tr(language),
       children: [
         _labeledField(
-          label: language == 'en' ? 'Full name' : 'ሙሉ ስም',
+          label: 'Full name'.tr(language),
           controller: nameCtrl,
-          hint: language == 'en' ? 'Your name' : 'ስምዎ',
+          hint: 'Your name'.tr(language),
         ),
         const SizedBox(height: 16),
         _labeledField(
-          label: language == 'en' ? 'Email' : 'ኢሜይል',
+          label: 'Email'.tr(language),
           controller: signupEmailCtrl,
           hint: 'your@email.com',
         ),
         const SizedBox(height: 16),
         _labeledField(
-          label: language == 'en' ? 'Password' : 'የይለፍ ቃል',
+          label: 'Password'.tr(language),
           controller: signupPassCtrl,
-          hint: language == 'en' ? 'Enter password' : 'የይለፍ ቃል',
+          hint: 'Enter password'.tr(language),
           obscure: true,
         ),
         const SizedBox(height: 16),
         _labeledField(
-          label: language == 'en' ? 'Confirm password' : 'ያረጋግጡ',
+          label: 'Confirm password'.tr(language),
           controller: signupConfirmCtrl,
-          hint: language == 'en' ? 'Confirm password' : 'የይለፍ ቃል',
+          hint: 'Confirm password'.tr(language),
           obscure: true,
         ),
         const SizedBox(height: 20),
@@ -670,9 +629,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
                     ),
                   )
                 : Text(
-                    language == 'en'
-                        ? 'Sign Up & Start Learning'
-                        : 'ይመዝገቡ & ይጀምሩ',
+                    'Sign Up & Start Learning'.tr(language),
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -686,7 +643,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
             onPressed: () => setState(() => view = AuthView.signin),
             style: TextButton.styleFrom(foregroundColor: Colors.white),
             child: Text(
-              language == 'en' ? 'Back to sign in' : 'ወደ መግቢያ ተመለስ',
+              'Back to sign in'.tr(language),
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
@@ -697,10 +654,10 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
 
   Widget _buildForgot() {
     return _card(
-      title: language == 'en' ? 'Forgot Password' : 'የይለፍ ቃል ረሱ',
+      title: 'Forgot Password'.tr(language),
       children: [
         _labeledField(
-          label: language == 'en' ? 'Email' : 'ኢሜይል',
+          label: 'Email'.tr(language),
           controller: forgotEmailCtrl,
           hint: 'your@email.com',
         ),
@@ -719,7 +676,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
               elevation: 0,
             ),
             child: Text(
-              language == 'en' ? 'Send Reset Code' : 'ኮድ ላክ',
+              'Send Reset Code'.tr(language),
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
@@ -728,7 +685,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
           child: TextButton(
             onPressed: () => setState(() => view = AuthView.signin),
             style: TextButton.styleFrom(foregroundColor: Colors.white),
-            child: Text(language == 'en' ? 'Back to sign in' : 'ወደ መግቢያ ተመለስ'),
+            child: Text('Back to sign in'.tr(language)),
           ),
         ),
       ],
@@ -737,25 +694,25 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
 
   Widget _buildReset() {
     return _card(
-      title: language == 'en' ? 'Reset Password' : 'የይለፍ ቃል ዳግም አስጀምር',
+      title: 'Reset Password'.tr(language),
       children: [
         _labeledField(
-          label: language == 'en' ? 'Reset code' : 'ኮድ',
+          label: 'Reset code'.tr(language),
           controller: resetCodeCtrl,
-          hint: language == 'en' ? 'Enter code' : 'ኮድ',
+          hint: 'Enter code'.tr(language),
         ),
         const SizedBox(height: 16),
         _labeledField(
-          label: language == 'en' ? 'New password' : 'አዲስ የይለፍ ቃል',
+          label: 'New password'.tr(language),
           controller: newPassCtrl,
-          hint: language == 'en' ? 'Enter password' : 'የይለፍ ቃል',
+          hint: 'Enter password'.tr(language),
           obscure: true,
         ),
         const SizedBox(height: 16),
         _labeledField(
-          label: language == 'en' ? 'Confirm new password' : 'ያረጋግጡ',
+          label: 'Confirm new password'.tr(language),
           controller: newPassConfirmCtrl,
-          hint: language == 'en' ? 'Confirm password' : 'የይለፍ ቃል',
+          hint: 'Confirm password'.tr(language),
           obscure: true,
         ),
         const SizedBox(height: 20),
@@ -773,7 +730,7 @@ class _AuthenticationScreenState extends ConsumerState<AuthenticationScreen> {
               elevation: 0,
             ),
             child: Text(
-              language == 'en' ? 'Reset Password' : 'ዳግም አስጀምር',
+              'Reset Password'.tr(language),
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),

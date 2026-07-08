@@ -3,8 +3,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
-import 'package:bcrypt/bcrypt.dart';
-
 import 'package:esl_learning_flutter/backend/database/db_constants.dart';
 import 'package:esl_learning_flutter/data/app_data.dart' as app;
 
@@ -72,7 +70,7 @@ CREATE TABLE sign_templates (
           // Seed the 'two' gesture coordinates
           await db.insert('sign_templates', {
             'sign_id': 'two',
-            'coordinates': '0.0000,0.0000,0.0000,0.2094,-0.1245,-0.1044,0.3466,-0.3666,-0.1380,0.2711,-0.5782,-0.1610,0.1341,-0.7218,-0.1864,0.2929,-0.9394,-0.0575,0.3686,-1.2676,-0.0938,0.4100,-1.4653,-0.1330,0.4322,-1.6567,-0.1676,0.1267,-0.9881,-0.0679,0.1545,-1.3813,-0.0959,0.1602,-1.6136,-0.1478,0.1644,-1.8275,-0.1890,-0.0276,-0.9221,-0.0910,-0.0594,-1.2736,-0.1701,-0.0733,-1.5210,-0.2607,-0.0858,-1.7459,-0.3237,-0.1777,-0.7649,-0.1199,-0.1568,-0.9912,-0.2139,-0.0701,-0.9159,-0.2444,0.0118,-0.8009,-0.2592'
+            'coordinates': '0.0000,0.0000,0.0000,0.3447,-0.2075,-0.2052,0.5021,-0.5020,-0.2912,0.3141,-0.6513,-0.3822,0.0490,-0.7276,-0.4611,0.3087,-1.0378,-0.0962,0.3484,-1.4078,-0.2372,0.3498,-1.6420,-0.3391,0.3264,-1.8425,-0.4101,0.0000,-1.0000,-0.1310,-0.0747,-1.4165,-0.3022,-0.1283,-1.6817,-0.4300,-0.1838,-1.8955,-0.4998,-0.2570,-0.8474,-0.1946,-0.3524,-1.1058,-0.4869,-0.2076,-0.9279,-0.5727,-0.1020,-0.7663,-0.5505,-0.4633,-0.6203,-0.2722,-0.4221,-0.7420,-0.5457,-0.2322,-0.6069,-0.5954,-0.0915,-0.4742,-0.5688'
           });
         }
         if (oldVersion < 5) {
@@ -117,7 +115,6 @@ CREATE TABLE sign_templates (
           await db.execute(
             'ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0',
           );
-          await _seedAdminUser(db);
         }
         if (oldVersion < 8) {
           await db.execute(
@@ -130,6 +127,28 @@ CREATE TABLE sign_templates (
           );
           await db.execute(
             'ALTER TABLE lessons ADD COLUMN show_on_culture_card INTEGER NOT NULL DEFAULT 0',
+          );
+        }
+        if (oldVersion < 10) {
+          // Convert all sign_id values to lowercase in the database to prevent case sensitivity issues
+          await db.execute('UPDATE sign_templates SET sign_id = LOWER(sign_id)');
+          // Ensure 'three' coordinates are properly seeded as lowercase
+          await db.insert(
+            'sign_templates',
+            {
+              'sign_id': 'three',
+              'coordinates': '0.0,0.0,0.0,0.2082,-0.1467,-0.0924,0.3498,-0.4279,-0.1198,0.2573,-0.6575,-0.1373,0.0932,-0.7832,-0.1597,0.2794,-0.9444,-0.0513,0.3541,-1.2841,-0.092,0.4008,-1.4843,-0.1326,0.4288,-1.671,-0.1656,0.1092,-0.9862,-0.0691,0.1407,-1.4013,-0.1055,0.1563,-1.6445,-0.1588,0.1661,-1.8622,-0.1956,-0.0496,-0.9128,-0.0982,-0.0701,-1.2798,-0.1924,-0.063,-1.5256,-0.2846,-0.0647,-1.7461,-0.3433,-0.2024,-0.7479,-0.1299,-0.1474,-0.9453,-0.2362,-0.0701,-0.8195,-0.2595,-0.017,-0.6689,-0.2651'
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+          // Ensure 'two' coordinates are properly seeded as lowercase
+          await db.insert(
+            'sign_templates',
+            {
+              'sign_id': 'two',
+              'coordinates': '0.0000,0.0000,0.0000,0.3447,-0.2075,-0.2052,0.5021,-0.5020,-0.2912,0.3141,-0.6513,-0.3822,0.0490,-0.7276,-0.4611,0.3087,-1.0378,-0.0962,0.3484,-1.4078,-0.2372,0.3498,-1.6420,-0.3391,0.3264,-1.8425,-0.4101,0.0000,-1.0000,-0.1310,-0.0747,-1.4165,-0.3022,-0.1283,-1.6817,-0.4300,-0.1838,-1.8955,-0.4998,-0.2570,-0.8474,-0.1946,-0.3524,-1.1058,-0.4869,-0.2076,-0.9279,-0.5727,-0.1020,-0.7663,-0.5505,-0.4633,-0.6203,-0.2722,-0.4221,-0.7420,-0.5457,-0.2322,-0.6069,-0.5954,-0.0915,-0.4742,-0.5688'
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
           );
         }
       },
@@ -322,53 +341,17 @@ CREATE TABLE sign_templates (
 
     // Preseed the sign 'three' coordinates template
     batch.insert('sign_templates', {
-      'sign_id': 'Three',
+      'sign_id': 'three',
       'coordinates': '0.0,0.0,0.0,0.2082,-0.1467,-0.0924,0.3498,-0.4279,-0.1198,0.2573,-0.6575,-0.1373,0.0932,-0.7832,-0.1597,0.2794,-0.9444,-0.0513,0.3541,-1.2841,-0.092,0.4008,-1.4843,-0.1326,0.4288,-1.671,-0.1656,0.1092,-0.9862,-0.0691,0.1407,-1.4013,-0.1055,0.1563,-1.6445,-0.1588,0.1661,-1.8622,-0.1956,-0.0496,-0.9128,-0.0982,-0.0701,-1.2798,-0.1924,-0.063,-1.5256,-0.2846,-0.0647,-1.7461,-0.3433,-0.2024,-0.7479,-0.1299,-0.1474,-0.9453,-0.2362,-0.0701,-0.8195,-0.2595,-0.017,-0.6689,-0.2651'
     });
 
     // Preseed the sign 'two' coordinates template
     batch.insert('sign_templates', {
       'sign_id': 'two',
-      'coordinates': '0.0000,0.0000,0.0000,0.2094,-0.1245,-0.1044,0.3466,-0.3666,-0.1380,0.2711,-0.5782,-0.1610,0.1341,-0.7218,-0.1864,0.2929,-0.9394,-0.0575,0.3686,-1.2676,-0.0938,0.4100,-1.4653,-0.1330,0.4322,-1.6567,-0.1676,0.1267,-0.9881,-0.0679,0.1545,-1.3813,-0.0959,0.1602,-1.6136,-0.1478,0.1644,-1.8275,-0.1890,-0.0276,-0.9221,-0.0910,-0.0594,-1.2736,-0.1701,-0.0733,-1.5210,-0.2607,-0.0858,-1.7459,-0.3237,-0.1777,-0.7649,-0.1199,-0.1568,-0.9912,-0.2139,-0.0701,-0.9159,-0.2444,0.0118,-0.8009,-0.2592'
+      'coordinates': '0.0000,0.0000,0.0000,0.3447,-0.2075,-0.2052,0.5021,-0.5020,-0.2912,0.3141,-0.6513,-0.3822,0.0490,-0.7276,-0.4611,0.3087,-1.0378,-0.0962,0.3484,-1.4078,-0.2372,0.3498,-1.6420,-0.3391,0.3264,-1.8425,-0.4101,0.0000,-1.0000,-0.1310,-0.0747,-1.4165,-0.3022,-0.1283,-1.6817,-0.4300,-0.1838,-1.8955,-0.4998,-0.2570,-0.8474,-0.1946,-0.3524,-1.1058,-0.4869,-0.2076,-0.9279,-0.5727,-0.1020,-0.7663,-0.5505,-0.4633,-0.6203,-0.2722,-0.4221,-0.7420,-0.5457,-0.2322,-0.6069,-0.5954,-0.0915,-0.4742,-0.5688'
     });
 
     await batch.commit(noResult: true);
-    await _seedAdminUser(db);
-  }
-
-  static Future<void> _seedAdminUser(Database db) async {
-    const email = 'admin@miliketapp.com';
-    final existing = await db.query(
-      'users',
-      where: 'LOWER(email) = ?',
-      whereArgs: [email],
-      limit: 1,
-    );
-    if (existing.isNotEmpty) {
-      await db.update(
-        'users',
-        {'is_admin': 1},
-        where: 'LOWER(email) = ?',
-        whereArgs: [email],
-      );
-      return;
-    }
-    final now = DateTime.now().toUtc().toIso8601String();
-    await db.insert('users', {
-      'email': email,
-      'password_hash': BCrypt.hashpw(
-        'AdminPass2025!',
-        BCrypt.gensalt(logRounds: 10),
-      ),
-      'full_name': 'Admin',
-      'language_preference': 'en',
-      'signs_learned': 0,
-      'day_streak': 0,
-      'total_practiced': 0,
-      'is_admin': 1,
-      'created_at': now,
-      'updated_at': now,
-    });
   }
 
   Future<void> saveSignTemplate(String signId, List<double> coordinates) async {
@@ -396,6 +379,20 @@ CREATE TABLE sign_templates (
     
     final String coordString = maps.first['coordinates'] as String;
     return coordString.split(',').map((s) => double.tryParse(s) ?? 0.0).toList();
+  }
+
+  Future<List<Map<String, Object?>>> allSignTemplates() async {
+    final db = await database;
+    return db.query('sign_templates', orderBy: 'sign_id ASC');
+  }
+
+  Future<int> deleteSignTemplate(String signId) async {
+    final db = await database;
+    return db.delete(
+      'sign_templates',
+      where: 'sign_id = ?',
+      whereArgs: [signId.toLowerCase().trim()],
+    );
   }
 }
 

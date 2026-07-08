@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:esl_learning_flutter/backend/providers.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class DictionaryScreen extends ConsumerStatefulWidget {
   const DictionaryScreen({
@@ -126,7 +127,7 @@ class _DictionaryScreenState extends ConsumerState<DictionaryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.language == 'en' ? 'Dictionary' : 'መዝገበ ቃላት',
+                  'Dictionary'.tr(widget.language),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -138,7 +139,7 @@ class _DictionaryScreenState extends ConsumerState<DictionaryScreen> {
                   onChanged: (v) => setState(() => query = v),
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: 'Search signs...',
+                    hintText: 'Search signs...'.tr(widget.language),
                     hintStyle: const TextStyle(color: Color(0xA6FFFFFF)),
                     prefixIcon: const Icon(
                       Icons.search,
@@ -157,13 +158,13 @@ class _DictionaryScreenState extends ConsumerState<DictionaryScreen> {
                 Row(
                   children: [
                     _TabPill(
-                      label: 'All Signs (${all.length})',
+                      label: '${'All Signs'.tr(widget.language)} (${all.length})',
                       selected: tab == 'all',
                       onTap: () => setState(() => tab = 'all'),
                     ),
                     const SizedBox(width: 10),
                     _TabPill(
-                      label: 'Favorites (${favorites.length})',
+                      label: '${'Favorites'.tr(widget.language)} (${favorites.length})',
                       selected: tab == 'favorites',
                       onTap: () => setState(() => tab = 'favorites'),
                       icon: Icons.favorite_border,
@@ -175,10 +176,10 @@ class _DictionaryScreenState extends ConsumerState<DictionaryScreen> {
           ),
           Expanded(
             child: filtered.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
-                      'No signs found',
-                      style: TextStyle(
+                      'No signs found'.tr(widget.language),
+                      style: const TextStyle(
                         color: Color(0xFF666666),
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -225,7 +226,9 @@ class _DictionaryScreenState extends ConsumerState<DictionaryScreen> {
                       ],
                       const SizedBox(height: 8),
                       Text(
-                        'Showing ${filtered.length} signs',
+                        widget.language == 'en'
+                            ? 'Showing ${filtered.length} signs'
+                            : '${filtered.length} ምልክቶችን እያሳየ ነው',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Color(0xFF7C7C7C),

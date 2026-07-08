@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:esl_learning_flutter/backend/models/curriculum_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class LessonsScreen extends StatelessWidget {
   const LessonsScreen({
@@ -34,26 +35,26 @@ class LessonsScreen extends StatelessWidget {
           width: double.infinity,
           color: kPrimary,
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.school_outlined, color: Colors.white, size: 22),
-              SizedBox(width: 10),
+              const Icon(Icons.school_outlined, color: Colors.white, size: 22),
+              const SizedBox(width: 10),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Lessons',
-                    style: TextStyle(
+                    'Lessons'.tr(language),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 26,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.8,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
-                    'Choose a category to start learning',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                    'Choose a category to start learning'.tr(language),
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                 ],
               ),
@@ -91,17 +92,17 @@ class LessonsScreen extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.trending_up,
                           color: Colors.white70,
                           size: 14,
                         ),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Text(
-                          'YOUR ACTIVITY',
-                          style: TextStyle(
+                          'YOUR ACTIVITY'.tr(language),
+                          style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -111,9 +112,9 @@ class LessonsScreen extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    const Text(
-                      'Learning Progress',
-                      style: TextStyle(
+                    Text(
+                      'Learning Progress'.tr(language),
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -126,7 +127,7 @@ class LessonsScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            '$completedOverall of $totalLessons lessons completed',
+                            '$completedOverall ${'of'.tr(language)} $totalLessons ${'lessons completed'.tr(language)}',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,

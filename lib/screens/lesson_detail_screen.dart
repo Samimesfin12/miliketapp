@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class LessonDetailScreen extends StatelessWidget {
   const LessonDetailScreen({
@@ -110,7 +111,7 @@ class LessonDetailScreen extends StatelessWidget {
                     Expanded(
                       child: _StatCard(
                         icon: Icons.library_books_outlined,
-                        label: 'LESSONS',
+                        label: 'LESSONS'.tr(language),
                         value: list.length.toString(),
                       ),
                     ),
@@ -118,7 +119,7 @@ class LessonDetailScreen extends StatelessWidget {
                     Expanded(
                       child: _StatCard(
                         icon: Icons.check_circle_outline,
-                        label: 'COMPLETED',
+                        label: 'COMPLETED'.tr(language),
                         value: completedCount.toString(),
                       ),
                     ),
@@ -139,9 +140,9 @@ class LessonDetailScreen extends StatelessWidget {
                 itemCount: list.length + 1,
                 itemBuilder: (_, i) {
                   if (i == list.length) {
-                    return const Padding(
-                      padding: EdgeInsets.only(top: 10),
-                      child: _PromoCard(),
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: _PromoCard(language: language),
                     );
                   }
                   final lesson = list[i];
@@ -349,9 +350,9 @@ class _LessonTile extends StatelessWidget {
                     color: const Color(0xFFE7E7E7),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text(
-                    'Locked',
-                    style: TextStyle(
+                  child: Text(
+                    'Locked'.tr(language),
+                    style: const TextStyle(
                       color: Color(0xFF8A8A8A),
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -393,7 +394,8 @@ class _LessonTile extends StatelessWidget {
 }
 
 class _PromoCard extends StatelessWidget {
-  const _PromoCard();
+  const _PromoCard({required this.language});
+  final String language;
 
   @override
   Widget build(BuildContext context) {
@@ -425,10 +427,10 @@ class _PromoCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          const Text(
-            'Master 50+ basic gestures through\ninteractive video lessons.',
+          Text(
+            'Master 50+ basic gestures through\ninteractive video lessons.'.tr(language),
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Color(0xFF1D1D1D),
               fontSize: 17 / 1.3,
               height: 1.45,

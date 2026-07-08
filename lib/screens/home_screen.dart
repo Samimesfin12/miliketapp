@@ -6,6 +6,7 @@ import 'package:esl_learning_flutter/backend/models/curriculum_data.dart';
 import 'package:esl_learning_flutter/backend/providers.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
+import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({
@@ -18,6 +19,7 @@ class HomeScreen extends ConsumerWidget {
     required this.onOpenMenu,
     required this.onViewAll,
     required this.onOpenLesson,
+    required this.onLanguageChanged,
   });
   final String language;
   final CurriculumData curriculum;
@@ -27,6 +29,7 @@ class HomeScreen extends ConsumerWidget {
   final VoidCallback onOpenMenu;
   final VoidCallback onViewAll;
   final ValueChanged<LessonItem> onOpenLesson;
+  final ValueChanged<String> onLanguageChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -86,23 +89,36 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
             const Spacer(),
-            Container(
-              height: 32,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFE5E2E1)),
-                borderRadius: BorderRadius.circular(8),
-                color: Colors.white,
-              ),
-              child: Row(
-                children: [
-                  Text(
-                    language == 'am' ? 'አማ' : 'EN',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.keyboard_arrow_down, size: 18),
-                ],
+            PopupMenuButton<String>(
+              onSelected: onLanguageChanged,
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'en',
+                  child: Text('English (EN)'),
+                ),
+                const PopupMenuItem(
+                  value: 'am',
+                  child: Text('አማርኛ (አማ)'),
+                ),
+              ],
+              child: Container(
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE5E2E1)),
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.white,
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      language == 'am' ? 'አማ' : 'EN',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.keyboard_arrow_down, size: 18),
+                  ],
+                ),
               ),
             ),
           ],
@@ -114,20 +130,20 @@ class HomeScreen extends ConsumerWidget {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
+                children: [
                   Text(
-                    'Hello! 👋',
-                    style: TextStyle(
+                    'Hello! 👋'.tr(language),
+                    style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.9,
                       height: 0.92,
                     ),
                   ),
-                  SizedBox(height: 6),
+                  const SizedBox(height: 6),
                   Text(
-                    'Learn Ethiopian Sign\nLanguage!',
-                    style: TextStyle(
+                    'Learn Ethiopian Sign\nLanguage!'.tr(language),
+                    style: const TextStyle(
                       fontSize: 12,
                       color: Colors.black87,
                       height: 1.2,
@@ -164,9 +180,9 @@ class HomeScreen extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 22),
-        const _SectionTitle(
+        _SectionTitle(
           icon: Icons.play_circle_outline,
-          title: 'Continue Learning',
+          title: 'Continue Learning'.tr(language),
         ),
         const SizedBox(height: 10),
         GestureDetector(
@@ -209,9 +225,9 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
-                  'Continue Your Journey',
-                  style: TextStyle(
+                Text(
+                  'Continue Your Journey'.tr(language),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -232,15 +248,15 @@ class HomeScreen extends ConsumerWidget {
                     color: Colors.white.withValues(alpha: 0.18),
                     border: Border.all(color: Colors.white.withValues(alpha: 0.32)),
                   ),
-                  child: const Center(
+                  child: Center(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.play_circle_fill, color: Colors.white70, size: 18),
-                        SizedBox(width: 6),
+                        const Icon(Icons.play_circle_fill, color: Colors.white70, size: 18),
+                        const SizedBox(width: 6),
                         Text(
-                          'Resume Now',
-                          style: TextStyle(
+                          'Resume Now'.tr(language),
+                          style: const TextStyle(
                             color: Colors.white70,
                             fontWeight: FontWeight.w700,
                             fontSize: 12,
@@ -259,19 +275,19 @@ class HomeScreen extends ConsumerWidget {
           onTap: onViewAll,
           child: Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Quick Categories',
-                  style: TextStyle(
+                  'Quick Categories'.tr(language),
+                  style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.8,
                   ),
                 ),
               ),
-              const Text(
-                'View All',
-                style: TextStyle(color: Colors.black54, fontSize: 13),
+              Text(
+                'View All'.tr(language),
+                style: const TextStyle(color: Colors.black54, fontSize: 13),
               ),
             ],
           ),
@@ -318,7 +334,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      item.category.title,
+                      language == 'en' ? item.category.title : item.category.titleAm,
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -351,40 +367,40 @@ class HomeScreen extends ConsumerWidget {
               borderRadius: BorderRadius.circular(18),
             ),
             child: Row(
-              children: const [
-                CircleAvatar(
+              children: [
+                const CircleAvatar(
                   radius: 16,
                   backgroundColor: Color(0xFFF7D95E),
                   child: Icon(Icons.light_mode_outlined, color: Colors.black87, size: 18),
                 ),
-                SizedBox(width: 10),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Practice Quiz of the Day',
-                        style: TextStyle(
+                        'Practice Quiz of the Day'.tr(language),
+                        style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                       Text(
-                        'Test Your Daily Goals!',
-                        style: TextStyle(fontSize: 13),
+                        'Test Your Daily Goals!'.tr(language),
+                        style: const TextStyle(fontSize: 13),
                       ),
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right, size: 24),
+                const Icon(Icons.chevron_right, size: 24),
               ],
             ),
           ),
         ),
         const SizedBox(height: 18),
-        const Text(
-          'Ethiopian Culture',
-          style: TextStyle(
+        Text(
+          'Ethiopian Culture'.tr(language),
+          style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.8,
@@ -530,9 +546,9 @@ class _CultureSignCard extends StatelessWidget {
                         color: const Color(0xFF0A6D40),
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: const Text(
-                        'CULTURAL SIGN',
-                        style: TextStyle(
+                      child: Text(
+                        'CULTURAL SIGN'.tr(language),
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
