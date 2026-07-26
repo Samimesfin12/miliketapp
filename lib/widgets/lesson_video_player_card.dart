@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:dio/dio.dart' show CancelToken;
 import 'package:esl_learning_flutter/backend/services/video_downloader.dart';
+import 'package:esl_learning_flutter/backend/services/video_loader_optimizer.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 
@@ -48,6 +49,7 @@ class LessonVideoPlayerCard extends StatefulWidget {
     this.bottomCaption,
     this.showEthBadge = false,
     this.borderRadius = 16,
+    this.hideTitle = false,
   });
 
   final LessonItem lesson;
@@ -55,6 +57,7 @@ class LessonVideoPlayerCard extends StatefulWidget {
   final String? bottomCaption;
   final bool showEthBadge;
   final double borderRadius;
+  final bool hideTitle;
 
   @override
   State<LessonVideoPlayerCard> createState() => _LessonVideoPlayerCardState();
@@ -75,6 +78,10 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
   bool _error = false;
   String? _errorMessage;
   bool _progressReported = false;
+  bool _isTransitioning = false;
+  String? _currentDriveId;
+  Timer? _driveCacheCheckTimer;
+  bool _driveCacheSwapInProgress = false;
 
   bool _controlsVisible = true;
   Timer? _hideControlsTimer;
@@ -88,11 +95,42 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
   /// Performance optimization: cache formatted time strings
   final Map<int, String> _timeCache = {};
 
+  /// Video loader optimizer instance
+  late VideoLoaderOptimizer _optimizer;
+  bool _headerPreloadStarted = false;
+
   @override
   void initState() {
     super.initState();
+    _optimizer = VideoLoaderOptimizer();
     WidgetsBinding.instance.addObserver(this);
+    
+    // Start header preloading immediately for faster playback
+    _startHeaderPreload();
+    
     _initPlayer();
+  }
+
+  /// Preload video headers in background for instant header data
+  void _startHeaderPreload() {
+    if (_headerPreloadStarted) return;
+    _headerPreloadStarted = true;
+
+    final url = widget.lesson.videoUrl?.trim();
+    if (url == null || url.isEmpty) return;
+
+    Future.microtask(() async {
+      try {
+        if (mounted) {
+          final preloadInfo = await _optimizer.preloadVideoHeaders(url);
+          if (mounted) {
+            debugPrint('Video preload info ready: ${preloadInfo.totalSize ~/ 1024}KB');
+          }
+        }
+      } catch (e) {
+        debugPrint('Header preload failed: $e');
+      }
+    });
   }
 
   @override
@@ -106,9 +144,15 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
   @override
   void didUpdateWidget(LessonVideoPlayerCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.lesson.id != widget.lesson.id ||
-        oldWidget.lesson.videoLocalPath != widget.lesson.videoLocalPath ||
-        oldWidget.lesson.videoUrl != widget.lesson.videoUrl) {
+    final idChanged = oldWidget.lesson.id != widget.lesson.id;
+    final urlChanged = oldWidget.lesson.videoUrl != widget.lesson.videoUrl;
+    final localPathChanged =
+        oldWidget.lesson.videoLocalPath != widget.lesson.videoLocalPath;
+
+    // Only re-initialize if the lesson ID changed, OR if the video URL or local path changed
+    // AND the player is not currently successfully initialized.
+    // This avoids interrupting active playback when a background download completes and sets videoLocalPath.
+    if (idChanged || ((urlChanged || localPathChanged) && !_initialized)) {
       _progressReported = false;
       _timeCache.clear();
       _initPlayer();
@@ -125,9 +169,9 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
         allowBackgroundPlayback: false,
       );
 
-  Future<List<({VideoPlayerController controller, String label})>>
+  Future<List<({VideoPlayerController controller, String label, String? driveId})>>
       _playbackCandidates(CancelToken? cancelToken) async {
-    final out = <({VideoPlayerController controller, String label})>[];
+    final out = <({VideoPlayerController controller, String label, String? driveId})>[];
     final local = widget.lesson.videoLocalPath?.trim();
     final u = widget.lesson.videoUrl?.trim();
 
@@ -141,6 +185,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
               videoPlayerOptions: _playerOptions,
             ),
             label: 'Local file: ${f.path}',
+            driveId: null,
           ));
           return out;
         }
@@ -149,9 +194,8 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     }
 
     if (u != null && u.isNotEmpty) {
-      if (VideoDownloader.parseDriveFileId(u) != null ||
-          u.startsWith('http://') ||
-          u.startsWith('https://')) {
+      final driveId = VideoDownloader.parseDriveFileId(u);
+      if (driveId != null || u.startsWith('http://') || u.startsWith('https://')) {
         try {
           final cacheDir = await getTemporaryDirectory();
           final source = await VideoDownloader().resolvePlaybackSource(
@@ -166,6 +210,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
                 videoPlayerOptions: _playerOptions,
               ),
               label: 'Drive cache: ${source.filePath}',
+              driveId: null,
             ));
           } else {
             out.add((
@@ -175,6 +220,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
                 videoPlayerOptions: _playerOptions,
               ),
               label: 'Remote URL: ${source.networkUrl}',
+              driveId: driveId,
             ));
           }
         } catch (e, st) {
@@ -187,23 +233,29 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
   }
 
   Future<void> _initPlayer() async {
-    final hadPlayer = _initialized;
     final currentCancelToken = CancelToken();
     _initCancelToken?.cancel();
     _initCancelToken = currentCancelToken;
+    _currentDriveId = null;
+    _stopDriveCacheMonitor();
 
-    setState(() {
-      _error = false;
-      _errorMessage = null;
-      _initialized = false;
-    });
-
-    if (hadPlayer) {
-      _controller.removeListener(_onVideoUpdate);
-      await _controller.dispose();
+    final hadPlayer = _initialized;
+    if (!hadPlayer) {
+      setState(() {
+        _error = false;
+        _errorMessage = null;
+        _initialized = false;
+        _isTransitioning = false;
+      });
+    } else {
+      setState(() {
+        _error = false;
+        _errorMessage = null;
+        _isTransitioning = true;
+      });
     }
 
-    List<({VideoPlayerController controller, String label})> candidates;
+    List<({VideoPlayerController controller, String label, String? driveId})> candidates;
     try {
       candidates = await _playbackCandidates(currentCancelToken);
     } catch (e) {
@@ -216,6 +268,8 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
       if (!mounted) return;
       setState(() {
         _error = true;
+        _initialized = false;
+        _isTransitioning = false;
         _errorMessage = widget.lesson.videoUrl == null ||
                 widget.lesson.videoUrl!.trim().isEmpty
             ? 'No sign video is configured for this lesson.'
@@ -229,19 +283,49 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
       final c = candidate.controller;
       try {
         debugPrint('Initializing video player: ${candidate.label}');
-        await c.initialize().timeout(const Duration(seconds: 6));
+        // Faster initialization timeout for better UX
+        await c.initialize().timeout(const Duration(seconds: 30));
         await c.setLooping(true);
         c.addListener(_onVideoUpdate);
-        await c.setVolume(_volume);
+        await c.setVolume(_muted ? 0.0 : _volume);
         await c.setPlaybackSpeed(_speedNotifier.value.value);
+
+        if (candidate.driveId != null) {
+          _currentDriveId = candidate.driveId;
+          _startDriveCacheMonitor(candidate.driveId!);
+        }
+
+        if (currentCancelToken.isCancelled) {
+          await c.dispose();
+          return;
+        }
+
+        // Swap controller and asynchronously dispose old one in a microtask to avoid UI blocking
+        final oldController = _initialized ? _controller : null;
+        if (oldController != null) {
+          oldController.removeListener(_onVideoUpdate);
+          Future.microtask(() async {
+            try {
+              await oldController.pause();
+              await oldController.dispose();
+            } catch (_) {}
+          });
+        }
+
         _controller = c;
         await c.seekTo(Duration.zero);
         await c.play();
+
         if (!mounted) {
           await c.dispose();
           return;
         }
-        setState(() => _initialized = true);
+
+        setState(() {
+          _initialized = true;
+          _isTransitioning = false;
+        });
+
         _positionNotifier.value = Duration.zero;
         _startPositionTimer();
         _scheduleHideControls();
@@ -253,14 +337,100 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
           'Video init failed (${candidate.label}): $e\n$st',
         );
         await c.dispose();
+
+        if (candidate.driveId != null) {
+          try {
+            final cacheDir = await getTemporaryDirectory();
+            final localPath = VideoDownloader.drivePlaybackCachePath(
+              cacheDir,
+              candidate.driveId!,
+            );
+            await VideoDownloader().downloadDriveVideoToFile(
+              fileId: candidate.driveId!,
+              destinationPath: localPath,
+              cancelToken: currentCancelToken,
+            );
+            final fallbackController = VideoPlayerController.file(
+              File(localPath),
+              videoPlayerOptions: _playerOptions,
+            );
+            debugPrint('Retrying video player from local cache: $localPath');
+            await fallbackController.initialize().timeout(const Duration(seconds: 60));
+            await fallbackController.setLooping(true);
+            fallbackController.addListener(_onVideoUpdate);
+            await fallbackController.setVolume(_muted ? 0.0 : _volume);
+            await fallbackController.setPlaybackSpeed(_speedNotifier.value.value);
+
+            if (candidate.driveId != null) {
+              _currentDriveId = candidate.driveId;
+              _stopDriveCacheMonitor();
+            }
+
+            if (currentCancelToken.isCancelled) {
+              await fallbackController.dispose();
+              return;
+            }
+
+            final oldController = _initialized ? _controller : null;
+            if (oldController != null) {
+              oldController.removeListener(_onVideoUpdate);
+              Future.microtask(() async {
+                try {
+                  await oldController.pause();
+                  await oldController.dispose();
+                } catch (_) {}
+              });
+            }
+
+            _controller = fallbackController;
+            await fallbackController.seekTo(Duration.zero);
+            await fallbackController.play();
+
+            if (!mounted) {
+              await fallbackController.dispose();
+              return;
+            }
+
+            setState(() {
+              _initialized = true;
+              _isTransitioning = false;
+            });
+
+            _positionNotifier.value = Duration.zero;
+            _startPositionTimer();
+            _scheduleHideControls();
+            debugPrint('Video player ready from local fallback: $localPath');
+            return;
+          } catch (downloadError, downloadSt) {
+            debugPrint(
+              'Local playback fallback failed for ${candidate.driveId}: $downloadError\n$downloadSt',
+            );
+          }
+        }
       }
     }
 
-    if (!mounted) return;
+    if (!mounted || currentCancelToken.isCancelled) return;
+    String friendlyMessage;
+    if (lastError != null) {
+      final errStr = lastError.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('Failed host lookup') ||
+          errStr.contains('connection error') ||
+          errStr.contains('Network is unreachable')) {
+        friendlyMessage = 'No internet connection. Please check your network and try again.';
+      } else {
+        friendlyMessage = lastError.toString();
+      }
+    } else {
+      friendlyMessage = 'Could not load the sign video from Google Drive.';
+    }
+
     setState(() {
       _initialized = false;
+      _isTransitioning = false;
       _error = true;
-      _errorMessage = lastError?.toString();
+      _errorMessage = friendlyMessage;
     });
   }
 
@@ -317,11 +487,103 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     });
   }
 
+  void _startDriveCacheMonitor(String driveId) {
+    _stopDriveCacheMonitor();
+    _driveCacheCheckTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _checkDriveCacheReady(driveId);
+    });
+  }
+
+  void _stopDriveCacheMonitor() {
+    _driveCacheCheckTimer?.cancel();
+    _driveCacheCheckTimer = null;
+    _driveCacheSwapInProgress = false;
+  }
+
+  Future<void> _checkDriveCacheReady(String driveId) async {
+    if (!_initialized || _currentDriveId != driveId || _driveCacheSwapInProgress) {
+      return;
+    }
+    try {
+      final cacheDir = await getTemporaryDirectory();
+      final localPath = VideoDownloader.drivePlaybackCachePath(cacheDir, driveId);
+      final file = File(localPath);
+      if (!await VideoDownloader.isValidVideoFile(file)) return;
+      await _swapToLocalCache(driveId, file, _controller.value.position);
+    } catch (e, st) {
+      debugPrint('Drive cache monitor failed: $e\n$st');
+    }
+  }
+
+  Future<void> _swapToLocalCache(
+    String driveId,
+    File file,
+    Duration currentPosition,
+  ) async {
+    if (!_initialized || _currentDriveId != driveId) return;
+    _driveCacheSwapInProgress = true;
+    try {
+      final fallbackController = VideoPlayerController.file(
+        file,
+        videoPlayerOptions: _playerOptions,
+      );
+      await fallbackController.initialize().timeout(const Duration(seconds: 60));
+      await fallbackController.setLooping(true);
+      fallbackController.addListener(_onVideoUpdate);
+      await fallbackController.setVolume(_muted ? 0.0 : _volume);
+      await fallbackController.setPlaybackSpeed(_speedNotifier.value.value);
+
+      if (!mounted || _currentDriveId != driveId) {
+        await fallbackController.dispose();
+        return;
+      }
+
+      final oldController = _initialized ? _controller : null;
+      final targetPosition = currentPosition;
+      if (oldController != null) {
+        oldController.removeListener(_onVideoUpdate);
+        Future.microtask(() async {
+          try {
+            await oldController.pause();
+            await oldController.dispose();
+          } catch (_) {}
+        });
+      }
+
+      _controller = fallbackController;
+      await fallbackController.seekTo(targetPosition);
+      await fallbackController.play();
+
+      if (!mounted) {
+        await fallbackController.dispose();
+        return;
+      }
+
+      setState(() {
+        _initialized = true;
+        _isTransitioning = false;
+      });
+      _currentDriveId = null;
+      _stopDriveCacheMonitor();
+      _positionNotifier.value = targetPosition;
+      _scheduleHideControls();
+      debugPrint('Swapped Drive stream to local cached playback: $driveId');
+    } catch (e, st) {
+      debugPrint('Local cache swap failed: $e\n$st');
+    } finally {
+      _driveCacheSwapInProgress = false;
+    }
+  }
+
+
   void _startPositionTimer() {
     _positionTimer?.cancel();
     _positionTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       if (!mounted || !_initialized || !_controller.value.isInitialized) return;
-      _positionNotifier.value = _controller.value.position;
+      final position = _controller.value.position;
+      if (_positionNotifier.value != position) {
+        _positionNotifier.value = position;
+      }
     });
   }
 
@@ -400,6 +662,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
           qualityNotifier: _qualityNotifier,
           lesson: widget.lesson,
           onClose: () => Navigator.of(ctx).pop(),
+          hideTitle: widget.hideTitle,
         ),
       ),
     );
@@ -418,6 +681,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     WidgetsBinding.instance.removeObserver(this);
     _hideControlsTimer?.cancel();
     _stopPositionTimer();
+    _stopDriveCacheMonitor();
     if (_initialized) {
       _controller.removeListener(_onVideoUpdate);
       _controller.dispose();
@@ -427,18 +691,36 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     _qualityNotifier.dispose();
     _positionNotifier.dispose();
     _timeCache.clear();
+    // Clean up cached stats
+    debugPrint('Cache stats: ${VideoLoaderOptimizer.getCacheStats()}');
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildPlayerSurface(),
-        const SizedBox(height: 14),
-        _buildAdvancedToolRow(),
-      ],
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(widget.borderRadius + 8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildPlayerSurface(),
+            const SizedBox(height: 12),
+            _buildAdvancedToolRow(),
+          ],
+        ),
+      ),
     );
   }
 
@@ -457,146 +739,192 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     final v = _controller.value;
     final aspect = v.aspectRatio == 0 ? (16 / 9) : v.aspectRatio;
 
-    return Material(
-      elevation: 4,
+    return ClipRRect(
       borderRadius: BorderRadius.circular(r),
-      clipBehavior: Clip.antiAlias,
-      color: Colors.black,
-      child: SizedBox(
-        height: height,
-        width: double.infinity,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            _toggleControls();
-            if (_controlsVisible) _scheduleHideControls();
-          },
-          onDoubleTapDown: (details) {
-            _doubleTapSeek(
-              details.localPosition,
-              Size(
-                MediaQuery.sizeOf(context).width,
-                MediaQuery.sizeOf(context).width * 9 / 16,
-              ),
-            );
-          },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              /// High-performance video rendering
-              ValueListenableBuilder<bool>(
-                valueListenable: _mirror,
-                builder: (context, mirror, _) {
-                  return Center(
-                    child: Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.diagonal3Values(
-                        mirror ? -1.0 : 1.0,
-                        1.0,
-                        1.0,
+      child: Material(
+        elevation: 6,
+        color: Colors.black,
+        child: SizedBox(
+          height: height,
+          width: double.infinity,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              _toggleControls();
+              if (_controlsVisible) _scheduleHideControls();
+            },
+            onDoubleTapDown: (details) {
+              _doubleTapSeek(
+                details.localPosition,
+                Size(
+                  MediaQuery.sizeOf(context).width,
+                  MediaQuery.sizeOf(context).width * 9 / 16,
+                ),
+              );
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ValueListenableBuilder<bool>(
+                  valueListenable: _mirror,
+                  builder: (context, mirror, _) {
+                    return Center(
+                      child: Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.diagonal3Values(
+                          mirror ? -1.0 : 1.0,
+                          1.0,
+                          1.0,
+                        ),
+                        child: RepaintBoundary(
+                          child: AspectRatio(
+                            aspectRatio: aspect,
+                            child: VideoPlayer(_controller),
+                          ),
+                        ),
                       ),
-                      child: RepaintBoundary(
-                        child: AspectRatio(
-                          aspectRatio: aspect,
-                          child: VideoPlayer(_controller),
+                    );
+                  },
+                ),
+
+                if (_isTransitioning)
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation(Colors.white),
+                            strokeWidth: 2.5,
+                          ),
                         ),
                       ),
                     ),
-                  );
-                },
-              ),
+                  ),
 
-              /// Gradient overlay for readability
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: !_controlsVisible,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.35),
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.65),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    ignoring: !_controlsVisible,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.22),
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.72),
+                          ],
+                          stops: const [0.0, 0.45, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                if (!widget.hideTitle)
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.play_circle_fill, color: Colors.white, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            widget.lesson.sign,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ],
-                        stops: const [0, 0.45, 1],
                       ),
                     ),
                   ),
-                ),
-              ),
 
-              /// Badges
-              if (widget.showEthBadge)
-                Positioned(left: 12, bottom: 56, child: _buildBadge('ETH SL')),
-              if (widget.bottomCaption != null &&
-                  widget.bottomCaption!.isNotEmpty)
+                if (widget.showEthBadge)
+                  Positioned(left: 12, bottom: 58, child: _buildBadge('ETH SL')),
+                if (widget.bottomCaption != null &&
+                    widget.bottomCaption!.isNotEmpty)
+                  Positioned(
+                    left: 12,
+                    bottom: widget.showEthBadge ? 90 : 58,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        widget.bottomCaption!,
+                        style: const TextStyle(
+                          color: Color(0xFF141414),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                if (_controlsVisible)
+                  Center(
+                    child: AnimatedScale(
+                      scale: _controller.value.isPlaying ? 0.95 : 1.0,
+                      duration: const Duration(milliseconds: 180),
+                      child: Material(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          iconSize: 54,
+                          icon: Icon(
+                            v.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: Colors.white,
+                          ),
+                          onPressed: _togglePlay,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                if (v.isBuffering)
+                  Center(
+                    child: SizedBox(
+                      width: 38,
+                      height: 38,
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation(
+                          Colors.white.withValues(alpha: 0.9),
+                        ),
+                        strokeWidth: 2.4,
+                      ),
+                    ),
+                  ),
+
                 Positioned(
-                  left: 12,
-                  bottom: widget.showEthBadge ? 88 : 56,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      widget.bottomCaption!,
-                      style: const TextStyle(
-                        color: Color(0xFF141414),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _buildAdvancedControlBar(),
                 ),
-
-              /// Center play/pause button
-              if (_controlsVisible)
-                Center(
-                  child: Material(
-                    color: Colors.black45,
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      iconSize: 56,
-                      icon: Icon(
-                        v.isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        color: Colors.white,
-                      ),
-                      onPressed: _togglePlay,
-                    ),
-                  ),
-                ),
-
-              /// Buffering indicator
-              if (v.isBuffering)
-                Center(
-                  child: SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation(
-                        Colors.white.withValues(alpha: 0.8),
-                      ),
-                      strokeWidth: 2,
-                    ),
-                  ),
-                ),
-
-              /// Advanced control bar
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _buildAdvancedControlBar(),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -608,48 +936,42 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
       opacity: _controlsVisible ? 1 : 0.35,
       duration: const Duration(milliseconds: 200),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.black.withValues(alpha: 0),
-              Colors.black.withValues(alpha: 0.6),
+              Colors.black.withValues(alpha: 0.0),
+              Colors.black.withValues(alpha: 0.72),
             ],
           ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            /// Frame-level scrubber with time preview
             if (_controlsVisible)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: SizedBox(height: 3, child: _buildAdvancedProgressBar()),
+                padding: const EdgeInsets.only(bottom: 6),
+                child: SizedBox(height: 4, child: _buildAdvancedProgressBar()),
               ),
-            const SizedBox(height: 1),
-
-            /// Main control row
             SizedBox(
-              height: 24,
+              height: 28,
               child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  GestureDetector(
-                    onTap: _togglePlay,
-                    child: Padding(
-                      padding: const EdgeInsets.all(2),
-                      child: Icon(
-                        _controller.value.isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
+                  IconButton(
+                    onPressed: _togglePlay,
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    icon: Icon(
+                      _controller.value.isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      color: Colors.white,
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: ValueListenableBuilder<Duration>(
                       valueListenable: _positionNotifier,
@@ -661,38 +983,33 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 8,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
                           ),
                         );
                       },
                     ),
                   ),
                   if (_controlsVisible) ...[
-                    GestureDetector(
-                      onTap: _toggleMute,
-                      child: Padding(
-                        padding: const EdgeInsets.all(2),
-                        child: Icon(
-                          _muted
-                              ? Icons.volume_off_rounded
-                              : Icons.volume_up_rounded,
-                          color: Colors.white,
-                          size: 16,
-                        ),
+                    IconButton(
+                      onPressed: _toggleMute,
+                      iconSize: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: Icon(
+                        _muted
+                            ? Icons.volume_off_rounded
+                            : Icons.volume_up_rounded,
+                        color: Colors.white,
                       ),
                     ),
-                    const SizedBox(width: 1),
-                    GestureDetector(
-                      onTap: _openAdvancedFullscreen,
-                      child: Padding(
-                        padding: const EdgeInsets.all(2),
-                        child: const Icon(
-                          Icons.fullscreen_rounded,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      onPressed: _openAdvancedFullscreen,
+                      iconSize: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.fullscreen_rounded, color: Colors.white),
                     ),
                   ],
                 ],
@@ -734,22 +1051,25 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     return Row(
       children: [
         Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () => _mirror.value = !_mirror.value,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: kPrimaryDark,
-              side: const BorderSide(color: Color(0xFFCFD8D3)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-            icon: ValueListenableBuilder<bool>(
-              valueListenable: _mirror,
-              builder: (_, m, _) =>
-                  Icon(m ? Icons.swap_horiz : Icons.swap_horiz_outlined),
-            ),
-            label: ValueListenableBuilder<bool>(
-              valueListenable: _mirror,
-              builder: (_, m, _) => Text(m ? 'Mirror: On' : 'Mirror: Off'),
-            ),
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _mirror,
+            builder: (_, mirrored, _) {
+              return FilledButton.icon(
+                onPressed: () => _mirror.value = !mirrored,
+                style: FilledButton.styleFrom(
+                  backgroundColor: mirrored
+                      ? const Color(0xFF1F6A5F)
+                      : const Color(0xFFF2F7F4),
+                  foregroundColor: mirrored ? Colors.white : kPrimaryDark,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: Icon(mirrored ? Icons.swap_horiz : Icons.swap_horiz_outlined),
+                label: Text(mirrored ? 'Mirror: On' : 'Mirror: Off'),
+              );
+            },
           ),
         ),
         const SizedBox(width: 10),
@@ -762,7 +1082,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              border: Border.all(color: const Color(0xFFCFD8D3)),
+              color: const Color(0xFFF2F7F4),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -788,27 +1108,33 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
   }
 
   Widget _loadingPlaceholder(double height, double r) {
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1B1B1B),
-        borderRadius: BorderRadius.circular(r),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(color: Colors.white54),
-            const SizedBox(height: 16),
-            Text(
-              widget.lesson.videoUrl != null &&
-                      VideoDownloader.parseDriveFileId(widget.lesson.videoUrl) !=
-                          null
-                  ? 'Preparing sign video…'
-                  : 'Loading video…',
-              style: const TextStyle(color: Colors.white70),
-            ),
-          ],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(r),
+      child: Container(
+        height: height,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1E2A2B), Color(0xFF101515)],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.4),
+              const SizedBox(height: 14),
+              Text(
+                widget.lesson.videoUrl != null &&
+                        VideoDownloader.parseDriveFileId(widget.lesson.videoUrl) !=
+                            null
+                    ? 'Preparing sign video…'
+                    : 'Loading video…',
+                style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -835,41 +1161,47 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
   }
 
   Widget _errorPlaceholder(double height, double r) {
-    return Container(
-      height: height,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(r),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(widget.lesson.thumbnail, style: const TextStyle(fontSize: 40)),
-          const SizedBox(height: 8),
-          Text(
-            _shortErrorMessage(),
-            textAlign: TextAlign.center,
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(r),
+      child: Container(
+        height: height,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF2C2C2C), Color(0xFF161616)],
           ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _initPlayer,
-            icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('Retry'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              textStyle: const TextStyle(fontSize: 13),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(widget.lesson.thumbnail, style: const TextStyle(fontSize: 40)),
+            const SizedBox(height: 8),
+            Text(
+              _shortErrorMessage(),
+              textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _initPlayer,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Retry'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                textStyle: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -903,6 +1235,7 @@ class _AdvancedFullscreenPlayer extends StatefulWidget {
     required this.qualityNotifier,
     required this.lesson,
     required this.onClose,
+    this.hideTitle = false,
   });
 
   final VideoPlayerController controller;
@@ -911,6 +1244,7 @@ class _AdvancedFullscreenPlayer extends StatefulWidget {
   final ValueNotifier<VideoQuality> qualityNotifier;
   final LessonItem lesson;
   final VoidCallback onClose;
+  final bool hideTitle;
 
   @override
   State<_AdvancedFullscreenPlayer> createState() =>
@@ -1094,7 +1428,7 @@ class _AdvancedFullscreenPlayerState extends State<_AdvancedFullscreenPlayer>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          widget.lesson.sign,
+                          widget.hideTitle ? 'Sign Language Video' : widget.lesson.sign,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
@@ -1103,15 +1437,16 @@ class _AdvancedFullscreenPlayerState extends State<_AdvancedFullscreenPlayer>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          widget.lesson.signAm,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
-                            fontSize: 12,
+                        if (!widget.hideTitle)
+                          Text(
+                            widget.lesson.signAm,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
                       ],
                     ),
                   ),

@@ -15,11 +15,13 @@ class AIPracticeScreen extends ConsumerStatefulWidget {
     super.key, 
     required this.language, 
     required this.lesson, 
-    required this.onBack
+    required this.onBack,
+    this.onCorrectPractice,
   });
   final String language;
   final LessonItem lesson;
   final VoidCallback onBack;
+  final VoidCallback? onCorrectPractice;
 
   @override
   ConsumerState<AIPracticeScreen> createState() => _AIPracticeScreenState();
@@ -207,6 +209,7 @@ class _AIPracticeScreenState extends ConsumerState<AIPracticeScreen> {
             confidence: score / 100.0,
             isCorrect: true,
           );
+          widget.onCorrectPractice?.call();
         } else if (!correct) {
           _hasSavedFeedback = false;
         }

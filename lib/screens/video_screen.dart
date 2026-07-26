@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
+import 'package:esl_learning_flutter/backend/services/video_downloader.dart';
 import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class VideoScreen extends StatefulWidget {
@@ -66,10 +68,42 @@ class _VideoScreenState extends State<VideoScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _preloadNextVideo();
+  }
+
+  @override
   void didUpdateWidget(VideoScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.lesson.id != widget.lesson.id) {
       setState(() => _watched = false);
+      _preloadNextVideo();
+    }
+  }
+
+  void _preloadNextVideo() {
+    final list = _lessonsInCategory();
+    final i = _lessonIndex();
+    for (int offset = 1; offset <= 2; offset++) {
+      final nextIdx = i + offset;
+      if (nextIdx >= 0 && nextIdx < list.length) {
+        final nextLesson = list[nextIdx];
+        final nextUrl = nextLesson.videoUrl?.trim();
+        final nextLocal = nextLesson.videoLocalPath?.trim();
+        if (nextUrl != null && nextUrl.isNotEmpty && (nextLocal == null || nextLocal.isEmpty)) {
+          final driveId = VideoDownloader.parseDriveFileId(nextUrl);
+          if (driveId != null) {
+            getTemporaryDirectory().then((cacheDir) async {
+              try {
+                await VideoDownloader().resolvePlaybackSource(nextUrl, cacheDir: cacheDir);
+              } catch (e) {
+                debugPrint('Preloading next video failed (offset $offset): $e');
+              }
+            }).catchError((_) {});
+          }
+        }
+      }
     }
   }
 

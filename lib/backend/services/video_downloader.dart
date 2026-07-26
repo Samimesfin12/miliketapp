@@ -1,7 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path/path.dart' as p;
 
@@ -14,8 +15,28 @@ final class VideoDownloader {
 
   final Dio _dio;
 
+  /// Cache of resolved Drive URLs to allow instant playback
+  static final Map<String, String> _resolvedUrlCache = {};
+
   static String driveDirectUrl(String fileId) =>
       'https://drive.google.com/uc?export=download&id=$fileId';
+
+  static List<String> driveCandidateUrls(String fileId) {
+    final hosts = ['drive.google.com', 'docs.google.com'];
+
+    final urls = <String>[];
+    for (final host in hosts) {
+      final base = 'https://$host/uc?export=download&id=$fileId';
+      urls.addAll([
+        base,
+        '$base&confirm=t',
+        '$base&confirm=1',
+        '$base&download=1',
+        '$base&confirm=t&download=1',
+      ]);
+    }
+    return urls;
+  }
 
   static String defaultLessonVideoPath(Directory root, String lessonId) =>
       p.join(root.path, 'lesson_videos', '$lessonId.mp4');
@@ -42,7 +63,8 @@ final class VideoDownloader {
         host == 'drive.google.com' || host.endsWith('.drive.google.com');
 
     if (isDriveHost) {
-      final idParam = uri.queryParameters['id'] ?? uri.queryParameters['fileid'];
+      final idParam =
+          uri.queryParameters['id'] ?? uri.queryParameters['fileid'];
       if (idParam != null && idParam.isNotEmpty) return idParam;
 
       final filePath = RegExp(r'/file/d/([-\w]+)(?:/|$)', caseSensitive: false);
@@ -150,13 +172,8 @@ final class VideoDownloader {
 
       // Resolve direct stream URL to play immediately
       final resolved = await _resolveDownloadTarget(driveId, cancelToken);
-      if (resolved is _DirectBytes) {
-        await cacheFile.writeAsBytes(resolved.bytes, flush: true);
-        return ResolvedPlaybackSource.file(cacheFile.path);
-      } else {
-        final streamUrl = (resolved as _StreamUrl).url;
-        return ResolvedPlaybackSource.network(streamUrl);
-      }
+      final streamUrl = (resolved as _StreamUrl).url;
+      return ResolvedPlaybackSource.network(streamUrl);
     }
 
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
@@ -182,12 +199,6 @@ final class VideoDownloader {
     }
 
     final resolved = await _resolveDownloadTarget(fileId, cancelToken);
-    if (resolved is _DirectBytes) {
-      await dest.writeAsBytes(resolved.bytes, flush: true);
-      onProgress?.call(resolved.bytes.length, resolved.bytes.length);
-      return;
-    }
-
     final url = (resolved as _StreamUrl).url;
     var resumeFrom = 0;
     if (await dest.exists()) {
@@ -228,12 +239,6 @@ final class VideoDownloader {
     final driveId = parseDriveFileId(urlOrFileId);
     if (driveId != null) {
       final resolved = await _resolveDownloadTarget(driveId, cancelToken);
-      if (resolved is _DirectBytes) {
-        await dest.writeAsBytes(resolved.bytes, flush: true);
-        onProgress?.call(resolved.bytes.length, resolved.bytes.length);
-        return;
-      }
-
       final url = (resolved as _StreamUrl).url;
       var resumeFrom = 0;
       if (await dest.exists()) {
@@ -267,54 +272,135 @@ final class VideoDownloader {
     String fileId,
     CancelToken? cancelToken,
   ) async {
-    final initial = driveDirectUrl(fileId);
-    final probe = await _dio.get<List<int>>(
-      initial,
-      options: Options(
-        responseType: ResponseType.bytes,
-        followRedirects: true,
-        maxRedirects: 8,
-        validateStatus: (c) => c != null && c < 500,
-        headers: const {
-          'User-Agent':
-              'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
-        },
-      ),
-      cancelToken: cancelToken,
+    // 1. Check in-memory cache first for instant resolution
+    if (_resolvedUrlCache.containsKey(fileId)) {
+      final cachedUrl = _resolvedUrlCache[fileId]!;
+      debugPrint('Drive resolution cache hit (memory) for $fileId: $cachedUrl');
+      return _StreamUrl(cachedUrl);
+    }
+
+    // 2. Check persistent cache for instant resolution
+    final persistentCachedUrl = await _getPersistentCache(fileId);
+    if (persistentCachedUrl != null) {
+      debugPrint('Drive resolution cache hit (persistent) for $fileId: $persistentCachedUrl');
+      _resolvedUrlCache[fileId] = persistentCachedUrl;
+      return _StreamUrl(persistentCachedUrl);
+    }
+
+    const headers = {
+      'User-Agent':
+          'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+      'Accept': 'text/html,application/octet-stream,video/*,*/*;q=0.8',
+    };
+
+    Object? lastError;
+    for (final candidateUrl in driveCandidateUrls(fileId)) {
+      try {
+        final response = await _dio.get<ResponseBody>(
+          candidateUrl,
+          options: Options(
+            responseType: ResponseType.stream,
+            followRedirects: true,
+            maxRedirects: 16,
+            validateStatus: (c) => c != null && c < 500,
+            headers: headers,
+          ),
+          cancelToken: cancelToken,
+        );
+
+        final stream = response.data?.stream;
+        if (stream == null) {
+          lastError = StateError('Empty stream response from Drive for file $fileId');
+          continue;
+        }
+
+        final bytes = <int>[];
+        bool looksHtml = false;
+
+        await for (final chunk in stream) {
+          bytes.addAll(chunk);
+          if (bytes.isNotEmpty) {
+            // Check if response starts with '<' (HTML / DOCTYPE)
+            looksHtml = bytes[0] == 0x3C;
+            if (!looksHtml) {
+              break;
+            }
+          }
+          if (bytes.length > 256 * 1024) break; // limit to 256KB for safety
+        }
+
+        if (!looksHtml) {
+          // Direct video stream! Close connection stream to free resources
+          try {
+            final sub = stream.listen((_) {});
+            await sub.cancel();
+          } catch (_) {}
+
+          final directUrl = response.realUri.toString();
+          debugPrint('Drive direct URL resolved (non-HTML): $directUrl');
+          _resolvedUrlCache[fileId] = directUrl;
+          _setPersistentCache(fileId, directUrl); // non-blocking save
+          return _StreamUrl(directUrl);
+        }
+
+        final html = String.fromCharCodes(bytes);
+        final userContent = RegExp(
+          r'https://drive\.usercontent\.google\.com/download[^\s"<>]+',
+          caseSensitive: false,
+        ).firstMatch(html)?.group(0);
+        if (userContent != null) {
+          final resolved = Uri.decodeFull(userContent.replaceAll('&amp;', '&'));
+          debugPrint('Drive user content URL resolved: $resolved');
+          _resolvedUrlCache[fileId] = resolved;
+          _setPersistentCache(fileId, resolved); // non-blocking save
+          return _StreamUrl(resolved);
+        }
+
+        final downloadUrl = RegExp(
+          r'https://[^\s"<>]+(?:/download|\?export=download)[^\s"<>]*',
+          caseSensitive: false,
+        ).firstMatch(html)?.group(0);
+        if (downloadUrl != null) {
+          final resolved = Uri.decodeFull(downloadUrl.replaceAll('&amp;', '&'));
+          debugPrint('Drive download URL resolved: $resolved');
+          _resolvedUrlCache[fileId] = resolved;
+          _setPersistentCache(fileId, resolved); // non-blocking save
+          return _StreamUrl(resolved);
+        }
+
+        final confirm = _extractConfirmToken(html);
+        if (confirm != null && confirm.isNotEmpty) {
+          final resolved = '$candidateUrl&confirm=$confirm';
+          debugPrint('Drive URL resolved with confirm token: $resolved');
+          _resolvedUrlCache[fileId] = resolved;
+          _setPersistentCache(fileId, resolved); // non-blocking save
+          return _StreamUrl(resolved);
+        }
+
+        lastError = StateError(
+          'Drive returned HTML warning page but could not extract confirmation/download URL',
+        );
+      } on DioException catch (e) {
+        lastError = e;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (lastError != null) {
+      debugPrint('Drive resolution failed for $fileId: $lastError');
+      if (lastError is Exception) {
+        throw lastError;
+      }
+      if (lastError is Error) {
+        throw lastError;
+      }
+      throw StateError(lastError.toString());
+    }
+
+    throw StateError(
+      'Could not resolve Google Drive video for $fileId. Try sharing the file publicly.',
     );
-
-    final bytes = probe.data;
-    if (bytes == null || bytes.isEmpty) {
-      throw StateError('Empty response from Drive for file $fileId');
-    }
-
-    final ct = probe.headers.value('content-type')?.toLowerCase() ?? '';
-    final looksHtml =
-        ct.contains('text/html') ||
-        (bytes.length >= 2 && bytes[0] == 0x3C && (bytes[1] == 0x21 || bytes[1] == 0x68));
-
-    if (!looksHtml) {
-      return _DirectBytes(Uint8List.fromList(bytes));
-    }
-
-    final html = String.fromCharCodes(bytes);
-    final userContent = RegExp(
-      r'https://drive\.usercontent\.google\.com/download[^\s"<>]+',
-      caseSensitive: false,
-    ).firstMatch(html)?.group(0);
-    if (userContent != null) {
-      return _StreamUrl(
-        Uri.decodeFull(userContent.replaceAll('&amp;', '&')),
-      );
-    }
-
-    final confirm = _extractConfirmToken(html);
-    if (confirm != null && confirm.isNotEmpty) {
-      return _StreamUrl('$initial&confirm=$confirm');
-    }
-
-    // Large-file workaround when Google omits a confirm input on the scan page.
-    return _StreamUrl('$initial&confirm=t');
   }
 
   static String? _extractConfirmToken(String html) {
@@ -323,10 +409,7 @@ final class VideoDownloader {
       RegExp(r'id="confirm"\s+value="([^"]+)"', caseSensitive: false),
       RegExp(r'"confirm"\s*:\s*"([^"]+)"', caseSensitive: false),
       RegExp(r'data-confirm="([^"]+)"', caseSensitive: false),
-      RegExp(
-        r'confirm=([0-9A-Za-z_\-]+)',
-        caseSensitive: false,
-      ),
+      RegExp(r'confirm=([0-9A-Za-z_\-]+)', caseSensitive: false),
     ];
     for (final pattern in patterns) {
       final match = pattern.firstMatch(html);
@@ -360,7 +443,8 @@ final class VideoDownloader {
           headers: headers,
           followRedirects: true,
           maxRedirects: 12,
-          validateStatus: (c) => c != null && (c == 200 || c == 206 || c == 416),
+          validateStatus: (c) =>
+              c != null && (c == 200 || c == 206 || c == 416),
         ),
         cancelToken: cancelToken,
       );
@@ -438,6 +522,47 @@ final class VideoDownloader {
     if (n == null) return null;
     return resumeFrom + n;
   }
+
+  static SharedPreferences? _prefs;
+
+  static Future<void> _initPrefs() async {
+    if (_prefs != null) return;
+    try {
+      _prefs = await SharedPreferences.getInstance();
+    } catch (_) {}
+  }
+
+  static Future<String?> _getPersistentCache(String fileId) async {
+    await _initPrefs();
+    if (_prefs == null) return null;
+    final data = _prefs!.getString('resolved_drive_$fileId');
+    if (data == null) return null;
+    try {
+      final json = jsonDecode(data) as Map<String, dynamic>;
+      final timestamp = json['timestamp'] as int;
+      final url = json['url'] as String;
+      
+      // Google Drive links are valid for at least 4 hours.
+      // Let's use a safe threshold of 3 hours (10,800,000 milliseconds).
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - timestamp < 3 * 3600 * 1000) {
+        return url;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> _setPersistentCache(String fileId, String url) async {
+    await _initPrefs();
+    if (_prefs == null) return;
+    try {
+      final data = jsonEncode({
+        'url': url,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+      await _prefs!.setString('resolved_drive_$fileId', data);
+    } catch (_) {}
+  }
 }
 
 /// Playback target after resolving Google Drive virus-scan / redirect pages.
@@ -455,11 +580,6 @@ final class ResolvedPlaybackSource {
 }
 
 sealed class _DownloadTarget {}
-
-final class _DirectBytes extends _DownloadTarget {
-  _DirectBytes(this.bytes);
-  final Uint8List bytes;
-}
 
 final class _StreamUrl extends _DownloadTarget {
   _StreamUrl(this.url);

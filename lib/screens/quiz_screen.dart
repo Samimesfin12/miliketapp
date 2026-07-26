@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:esl_learning_flutter/data/app_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
+import 'package:esl_learning_flutter/backend/services/video_downloader.dart';
 import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class QuizScreen extends StatefulWidget {
@@ -15,12 +17,14 @@ class QuizScreen extends StatefulWidget {
     required this.categoryLessons,
     required this.onBack,
     this.onQuizComplete,
+    this.onCorrectAnswer,
   });
   final String language;
   final String categoryId;
   final List<LessonItem> categoryLessons;
   final VoidCallback onBack;
   final Future<void> Function(int score, int totalQuestions)? onQuizComplete;
+  final void Function(LessonItem lesson)? onCorrectAnswer;
 
   @override
   State<QuizScreen> createState() => _QuizScreenState();
@@ -33,6 +37,12 @@ class _QuizScreenState extends State<QuizScreen> {
   bool _completionRecorded = false;
 
   @override
+  void initState() {
+    super.initState();
+    _preloadNextQuestionVideo();
+  }
+
+  @override
   void didUpdateWidget(covariant QuizScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.categoryId != widget.categoryId) {
@@ -40,6 +50,31 @@ class _QuizScreenState extends State<QuizScreen> {
       score = 0;
       selectedOption = null;
       _completionRecorded = false;
+      _preloadNextQuestionVideo();
+    }
+  }
+
+  void _preloadNextQuestionVideo() {
+    final questions =
+        quizByCategory[widget.categoryId] ?? quizByCategory['greetings']!;
+    final nextIdx = index + 1;
+    if (nextIdx < questions.length) {
+      final nextQ = questions[nextIdx];
+      final nextLesson = _lessonForQuizQuestion(nextQ);
+      final nextUrl = nextLesson.videoUrl?.trim();
+      final nextLocal = nextLesson.videoLocalPath?.trim();
+      if (nextUrl != null && nextUrl.isNotEmpty && (nextLocal == null || nextLocal.isEmpty)) {
+        final driveId = VideoDownloader.parseDriveFileId(nextUrl);
+        if (driveId != null) {
+          getTemporaryDirectory().then((cacheDir) async {
+            try {
+              await VideoDownloader().resolvePlaybackSource(nextUrl, cacheDir: cacheDir);
+            } catch (e) {
+              debugPrint('Preloading next quiz video failed: $e');
+            }
+          }).catchError((_) {});
+        }
+      }
     }
   }
 
@@ -158,10 +193,10 @@ class _QuizScreenState extends State<QuizScreen> {
                 ),
                 const SizedBox(height: 14),
                 LessonVideoPlayerCard(
-                  key: ValueKey('${q.correctAnswer}_$index'),
                   lesson: _lessonForQuizQuestion(q),
                   showEthBadge: true,
                   borderRadius: 14,
+                  hideTitle: true,
                 ),
                 const SizedBox(height: 18),
                 Text(
@@ -210,10 +245,13 @@ class _QuizScreenState extends State<QuizScreen> {
                             setState(() {
                               if (selectedOption == q.correctAnswer) {
                                 score += 1;
+                                final lesson = _lessonForQuizQuestion(q);
+                                widget.onCorrectAnswer?.call(lesson);
                               }
                               index = nextIndex;
                               selectedOption = null;
                             });
+                            _preloadNextQuestionVideo();
                             if (nextIndex >= questions.length &&
                                 !_completionRecorded) {
                               _completionRecorded = true;

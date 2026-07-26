@@ -220,6 +220,20 @@ class _RootAppState extends ConsumerState<RootApp> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _incrementPracticedCount() async {
+    final auth = ref.read(authSessionProvider);
+    setState(() {
+      totalHours += 1;
+    });
+    if (auth.isAuthenticated && auth.userId != null) {
+      await ref.read(userRepositoryProvider).updateCounters(
+            userId: auth.userId!,
+            totalPracticed: totalHours,
+          );
+    }
+    await persist();
+  }
+
   Future<LessonItem> _lessonWithDbMedia(LessonItem base) async {
     final row = await ref.read(lessonRepositoryProvider).lessonById(base.id);
     if (row == null) return base;
@@ -527,6 +541,17 @@ class _RootAppState extends ConsumerState<RootApp> {
           categoryId: quizCategory,
           categoryLessons: curriculum.lessonsByCategory[quizCategory] ?? [],
           onBack: () => setState(() => overlay = AppOverlay.none),
+          onCorrectAnswer: (lesson) async {
+            final uid = auth.userId;
+            if (uid != null) {
+              await _markLessonLearnedOnAccount(uid, lesson.id);
+            } else {
+              if (completedLessons.add(lesson.id)) {
+                signsLearned = curriculum.countCompletedInCurriculum(completedLessons);
+              }
+            }
+            await _incrementPracticedCount();
+          },
           onQuizComplete: (score, totalQuestions) async {
             final uid = auth.userId;
             if (uid == null) return;
@@ -546,6 +571,20 @@ class _RootAppState extends ConsumerState<RootApp> {
           language: language,
           lesson: selectedLesson!,
           onBack: () => setState(() => overlay = AppOverlay.video),
+          onCorrectPractice: () async {
+            final uid = auth.userId;
+            final lid = selectedLesson?.id;
+            if (lid != null) {
+              if (uid != null) {
+                await _markLessonLearnedOnAccount(uid, lid);
+              } else {
+                if (completedLessons.add(lid)) {
+                  signsLearned = curriculum.countCompletedInCurriculum(completedLessons);
+                }
+              }
+            }
+            await _incrementPracticedCount();
+          },
         );
       case AppOverlay.none:
         switch (current) {
