@@ -501,6 +501,29 @@ CREATE TABLE sign_templates (
     return coordString.split(',').map((s) => double.tryParse(s) ?? 0.0).toList();
   }
 
+  /// Returns all trained sign IDs sorted alphabetically.
+  Future<List<String>> getAllTrainedSignIds() async {
+    final db = await database;
+    final rows = await db.query('sign_templates', columns: ['sign_id'], orderBy: 'sign_id ASC');
+    return rows.map((r) => r['sign_id'] as String).toList();
+  }
+
+  /// Returns every trained template as a map of sign_id → coordinate list.
+  Future<Map<String, List<double>>> getAllTrainedTemplates() async {
+    final db = await database;
+    final rows = await db.query('sign_templates', columns: ['sign_id', 'coordinates'], orderBy: 'sign_id ASC');
+    final result = <String, List<double>>{};
+    for (final row in rows) {
+      final id = row['sign_id'] as String;
+      final coords = (row['coordinates'] as String)
+          .split(',')
+          .map((s) => double.tryParse(s) ?? 0.0)
+          .toList();
+      if (coords.length == 63) result[id] = coords;
+    }
+    return result;
+  }
+
   Future<List<Map<String, Object?>>> allSignTemplates() async {
     final db = await database;
     return db.query('sign_templates', orderBy: 'sign_id ASC');

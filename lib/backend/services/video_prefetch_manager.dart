@@ -27,7 +27,7 @@ final class VideoPrefetchManager {
   final Set<String> _completedPrefetches = {};
 
   /// Active prefetch controller for cancellation
-  var _prefetchController = _PrefetchController();
+  final _prefetchController = _PrefetchController();
 
   /// Add videos to prefetch queue in priority order
   Future<void> queueVideosForPrefetch(

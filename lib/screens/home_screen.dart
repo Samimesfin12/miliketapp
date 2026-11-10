@@ -20,6 +20,7 @@ class HomeScreen extends ConsumerWidget {
     required this.onViewAll,
     required this.onOpenLesson,
     required this.onLanguageChanged,
+    required this.onOpenLiveTranslator,
   });
   final String language;
   final CurriculumData curriculum;
@@ -30,6 +31,7 @@ class HomeScreen extends ConsumerWidget {
   final VoidCallback onViewAll;
   final ValueChanged<LessonItem> onOpenLesson;
   final ValueChanged<String> onLanguageChanged;
+  final VoidCallback onOpenLiveTranslator;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -179,6 +181,8 @@ class HomeScreen extends ConsumerWidget {
             ),
           ],
         ),
+        const SizedBox(height: 18),
+        _LiveTranslatorBanner(onTap: onOpenLiveTranslator, language: language),
         const SizedBox(height: 22),
         _SectionTitle(
           icon: Icons.play_circle_outline,
@@ -721,3 +725,237 @@ class _QuickCategory {
   final int completedCount;
   final Color backgroundColor;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live Translator Banner — animated call-to-action card on the home screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LiveTranslatorBanner extends StatefulWidget {
+  const _LiveTranslatorBanner({required this.onTap, required this.language});
+  final VoidCallback onTap;
+  final String language;
+
+  @override
+  State<_LiveTranslatorBanner> createState() => _LiveTranslatorBannerState();
+}
+
+class _LiveTranslatorBannerState extends State<_LiveTranslatorBanner>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _pulse = Tween<double>(begin: 0.92, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEn = widget.language == 'en';
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF005C2E), Color(0xFF007A40), Color(0xFF00A854)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF00502A).withValues(alpha: 0.38),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Decorative circles
+            Positioned(
+              right: -18,
+              top: -18,
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.06),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 20,
+              bottom: -30,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.05),
+                ),
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // Pulsing mic + hand icon stack
+                  AnimatedBuilder(
+                    animation: _pulse,
+                    builder: (context, child) {
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Transform.scale(
+                            scale: _pulse.value * 1.25,
+                            child: Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withValues(alpha: 0.1),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withValues(alpha: 0.15),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.3),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: const Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Positioned(
+                                  left: 8,
+                                  top: 10,
+                                  child: Icon(Icons.sign_language_rounded,
+                                      color: Colors.white70, size: 16),
+                                ),
+                                Positioned(
+                                  right: 8,
+                                  bottom: 10,
+                                  child: Icon(Icons.mic_rounded,
+                                      color: Colors.white, size: 18),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 14),
+
+                  // Text content
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00FF7F).withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.fiber_manual_record,
+                                      color: Color(0xFF66FF99), size: 8),
+                                  SizedBox(width: 3),
+                                  Text(
+                                    'LIVE',
+                                    style: TextStyle(
+                                      color: Color(0xFF66FF99),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'AI-Powered',
+                              style: TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          isEn ? 'Live Translator' : 'ቀጥታ ተርጓሚ',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.6,
+                            height: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isEn
+                              ? 'Sign ↔ Speech in real time'
+                              : 'ምልክት ↔ ንግግር ቀጥታ',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Arrow button
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.3)),
+                    ),
+                    child: const Icon(Icons.arrow_forward_rounded,
+                        color: Colors.white, size: 18),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

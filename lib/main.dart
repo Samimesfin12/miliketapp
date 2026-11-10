@@ -24,6 +24,7 @@ import 'package:esl_learning_flutter/screens/profile_screen.dart';
 import 'package:esl_learning_flutter/screens/quiz_screen.dart';
 import 'package:esl_learning_flutter/screens/ai_practice_screen.dart';
 import 'package:esl_learning_flutter/screens/drawer_info_screen.dart';
+import 'package:esl_learning_flutter/screens/live_translator_screen.dart';
 
 
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -465,6 +466,7 @@ class _RootAppState extends ConsumerState<RootApp> {
             overlay == AppOverlay.none ||
             overlay == AppOverlay.lessonDetail ||
             overlay == AppOverlay.aiPractice ||
+            overlay == AppOverlay.liveTranslator ||
             overlay == AppOverlay.quiz;
 
         return Scaffold(
@@ -485,6 +487,7 @@ class _RootAppState extends ConsumerState<RootApp> {
       overlay == AppOverlay.none ||
       overlay == AppOverlay.lessonDetail ||
       overlay == AppOverlay.aiPractice ||
+      overlay == AppOverlay.liveTranslator ||
       overlay == AppOverlay.quiz;
 
   Widget _buildBody({
@@ -586,6 +589,11 @@ class _RootAppState extends ConsumerState<RootApp> {
             await _incrementPracticedCount();
           },
         );
+      case AppOverlay.liveTranslator:
+        return LiveTranslatorScreen(
+          language: language,
+          onBack: () => setState(() => overlay = AppOverlay.none),
+        );
       case AppOverlay.none:
         switch (current) {
           case AppScreen.home:
@@ -606,6 +614,7 @@ class _RootAppState extends ConsumerState<RootApp> {
               onOpenLesson: (lesson) =>
                   unawaited(_openLessonWithMedia(lesson)),
               onLanguageChanged: _changeLanguage,
+              onOpenLiveTranslator: () => setState(() => overlay = AppOverlay.liveTranslator),
             );
           case AppScreen.lessons:
             return LessonsScreen(

@@ -7,6 +7,7 @@ enum AppOverlay {
   video,
   quiz,
   aiPractice,
+  liveTranslator,
 }
 enum QuizType { watchAndChoose, chooseVideo }
 
