@@ -127,6 +127,20 @@ final class VideoDownloader {
 
   static final Map<String, Future<void>> _activeDownloads = {};
 
+  /// Removes the in-memory and persistent resolved-URL cache for [fileId].
+  /// Call this before retrying a video that returned a 403 / expired URL.
+  static void evictCachedUrl(String fileId) {
+    _resolvedUrlCache.remove(fileId);
+    _evictPersistentCache(fileId);
+  }
+
+  static void _evictPersistentCache(String fileId) {
+    // Fire-and-forget: remove without awaiting
+    _initPrefs().then((_) {
+      _prefs?.remove('resolved_drive_$fileId');
+    }).catchError((_) {});
+  }
+
   void _startBackgroundDownload(String driveId, String destinationPath) {
     if (_activeDownloads.containsKey(driveId)) return;
     final downloadFuture = Future(() async {

@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:video_player/video_player.dart';
 import 'package:esl_learning_flutter/data/app_data.dart';
+import 'package:esl_learning_flutter/backend/models/daily_quiz_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
@@ -15,6 +18,7 @@ class QuizScreen extends StatefulWidget {
     required this.language,
     required this.categoryId,
     required this.categoryLessons,
+    this.dailyQuestions = const [],
     required this.onBack,
     this.onQuizComplete,
     this.onCorrectAnswer,
@@ -22,6 +26,7 @@ class QuizScreen extends StatefulWidget {
   final String language;
   final String categoryId;
   final List<LessonItem> categoryLessons;
+  final List<QuizQuestion> dailyQuestions;
   final VoidCallback onBack;
   final Future<void> Function(int score, int totalQuestions)? onQuizComplete;
   final void Function(LessonItem lesson)? onCorrectAnswer;
@@ -35,53 +40,135 @@ class _QuizScreenState extends State<QuizScreen> {
   int score = 0;
   String? selectedOption;
   bool _completionRecorded = false;
+  VideoPlayerController? _prewarmedController;
+  bool _prewarming = false;
 
   @override
   void initState() {
     super.initState();
-    _preloadNextQuestionVideo();
+    _prewarmNextVideo();
+  }
+
+  /// Returns the list of [QuizQuestion]s for the current quiz.
+  List<QuizQuestion> _questions() {
+    if (widget.categoryId == dailyQuizCategoryId) return widget.dailyQuestions;
+    return quizByCategory[widget.categoryId] ?? quizByCategory['greetings']!;
+  }
+
+  @override
+  void dispose() {
+    _prewarmedController?.dispose();
+    super.dispose();
   }
 
   @override
   void didUpdateWidget(covariant QuizScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.categoryId != widget.categoryId) {
+    if (oldWidget.categoryId != widget.categoryId ||
+        (widget.categoryId == dailyQuizCategoryId &&
+            oldWidget.dailyQuestions != widget.dailyQuestions)) {
       index = 0;
       score = 0;
       selectedOption = null;
       _completionRecorded = false;
-      _preloadNextQuestionVideo();
+      _prewarmedController?.dispose();
+      _prewarmedController = null;
+      _prewarming = false;
+      _prewarmNextVideo();
     }
   }
 
-  void _preloadNextQuestionVideo() {
-    final questions =
-        quizByCategory[widget.categoryId] ?? quizByCategory['greetings']!;
+  Future<void> _prewarmNextVideo() async {
+    final questions = _questions();
     final nextIdx = index + 1;
-    if (nextIdx < questions.length) {
-      final nextQ = questions[nextIdx];
-      final nextLesson = _lessonForQuizQuestion(nextQ);
-      final nextUrl = nextLesson.videoUrl?.trim();
-      final nextLocal = nextLesson.videoLocalPath?.trim();
-      if (nextUrl != null && nextUrl.isNotEmpty && (nextLocal == null || nextLocal.isEmpty)) {
-        final driveId = VideoDownloader.parseDriveFileId(nextUrl);
-        if (driveId != null) {
-          getTemporaryDirectory().then((cacheDir) async {
-            try {
-              await VideoDownloader().resolvePlaybackSource(nextUrl, cacheDir: cacheDir);
-            } catch (e) {
-              debugPrint('Preloading next quiz video failed: $e');
-            }
-          }).catchError((_) {});
+    if (nextIdx >= questions.length) return;
+    if (_prewarming) return;
+    _prewarming = true;
+    if (mounted) setState(() {});
+    final nextQ = questions[nextIdx];
+    final nextLesson = _lessonForQuizQuestion(nextQ);
+    final nextUrl = nextLesson.videoUrl?.trim();
+    final nextLocal = nextLesson.videoLocalPath?.trim();
+    try {
+      VideoPlayerController? ctrl;
+      if (nextLocal != null && nextLocal.isNotEmpty) {
+        final f = File(nextLocal);
+        if (await f.exists()) {
+          ctrl = VideoPlayerController.file(
+            f,
+            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+          );
         }
       }
+      if (ctrl == null && nextUrl != null && nextUrl.isNotEmpty) {
+        final driveId = VideoDownloader.parseDriveFileId(nextUrl);
+        if (driveId != null) {
+          final cacheDir = await getTemporaryDirectory();
+          final cachePath = VideoDownloader.drivePlaybackCachePath(
+            cacheDir,
+            driveId,
+          );
+          final cacheFile = File(cachePath);
+          if (await cacheFile.exists()) {
+            ctrl = VideoPlayerController.file(
+              cacheFile,
+              videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+            );
+          } else {
+            // Warm DNS / redirect even if file not cached yet
+            try {
+              await VideoDownloader().resolvePlaybackSource(
+                nextUrl,
+                cacheDir: cacheDir,
+              );
+            } catch (_) {}
+          }
+        }
+      }
+      if (ctrl != null && mounted) {
+        try {
+          await ctrl.initialize().timeout(const Duration(seconds: 20));
+          await ctrl.pause();
+          if (mounted) {
+            await _prewarmedController?.dispose();
+            _prewarmedController = ctrl;
+          } else {
+            await ctrl.dispose();
+          }
+        } catch (_) {
+          await ctrl.dispose();
+        }
+      }
+    } catch (e) {
+      debugPrint('Quiz prewarm failed: $e');
+    } finally {
+      _prewarming = false;
+      if (mounted) setState(() {});
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final questions =
-        quizByCategory[widget.categoryId] ?? quizByCategory['greetings']!;
+    final questions = _questions();
+    if (questions.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Complete a lesson to unlock your daily quiz!'.tr(
+                widget.language,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: widget.onBack,
+              child: Text('Continue Learning'.tr(widget.language)),
+            ),
+          ],
+        ),
+      );
+    }
     if (index >= questions.length) {
       final pct = (score / questions.length) * 100;
       return Container(
@@ -120,7 +207,8 @@ class _QuizScreenState extends State<QuizScreen> {
     }
     final q = questions[index];
     final progress = (index + 1) / questions.length;
-    final progressLabel = '${(progress * 100).round()}% ${'Complete'.tr(widget.language)}';
+    final progressLabel =
+        '${(progress * 100).round()}% ${'Complete'.tr(widget.language)}';
 
     return Container(
       color: const Color(0xFFF7F5F5),
@@ -193,10 +281,40 @@ class _QuizScreenState extends State<QuizScreen> {
                 ),
                 const SizedBox(height: 14),
                 LessonVideoPlayerCard(
+                  key: ValueKey('quiz_video_${widget.categoryId}_$index'),
                   lesson: _lessonForQuizQuestion(q),
                   showEthBadge: true,
                   borderRadius: 14,
                   hideTitle: true,
+                ),
+                // Animated 'loading next video' status row
+                AnimatedOpacity(
+                  opacity: _prewarming ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 400),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF0B9F5D),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Loading next question\u2026',
+                          style: TextStyle(
+                            color: Color(0xFF5A5A5A),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 18),
                 Text(
@@ -209,7 +327,8 @@ class _QuizScreenState extends State<QuizScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Watch the video carefully and select the\ncorrect meaning of the gesture performed.'.tr(widget.language),
+                  'Watch the video carefully and select the\ncorrect meaning of the gesture performed.'
+                      .tr(widget.language),
                   style: const TextStyle(
                     fontSize: 30 / 2,
                     height: 1.4,
@@ -235,9 +354,7 @@ class _QuizScreenState extends State<QuizScreen> {
                     onPressed: selectedOption == null
                         ? null
                         : () {
-                            final questions =
-                                quizByCategory[widget.categoryId] ??
-                                quizByCategory['greetings']!;
+                            final questions = _questions();
                             final newScore =
                                 score +
                                 (selectedOption == q.correctAnswer ? 1 : 0);
@@ -251,7 +368,7 @@ class _QuizScreenState extends State<QuizScreen> {
                               index = nextIndex;
                               selectedOption = null;
                             });
-                            _preloadNextQuestionVideo();
+                            unawaited(_prewarmNextVideo());
                             if (nextIndex >= questions.length &&
                                 !_completionRecorded) {
                               _completionRecorded = true;
@@ -297,6 +414,12 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   LessonItem _lessonForQuizQuestion(QuizQuestion q) {
+    if (widget.categoryId == dailyQuizCategoryId) {
+      final questionIndex = _questions().indexOf(q);
+      if (questionIndex >= 0 && questionIndex < widget.categoryLessons.length) {
+        return widget.categoryLessons[questionIndex];
+      }
+    }
     final parts = q.correctAnswer.split('/');
     final en = parts.first.trim();
     final am = parts.length > 1 ? parts.sublist(1).join('/').trim() : en;

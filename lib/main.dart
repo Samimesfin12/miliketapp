@@ -10,6 +10,7 @@ import 'package:esl_learning_flutter/backend/auth/auth_session_notifier.dart';
 import 'package:esl_learning_flutter/backend/providers.dart';
 import 'package:esl_learning_flutter/backend/services/video_downloader.dart';
 import 'package:esl_learning_flutter/backend/models/curriculum_data.dart';
+import 'package:esl_learning_flutter/backend/models/daily_quiz_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/screens/splash_screen.dart';
@@ -25,7 +26,6 @@ import 'package:esl_learning_flutter/screens/quiz_screen.dart';
 import 'package:esl_learning_flutter/screens/ai_practice_screen.dart';
 import 'package:esl_learning_flutter/screens/drawer_info_screen.dart';
 import 'package:esl_learning_flutter/screens/live_translator_screen.dart';
-
 
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
@@ -55,10 +55,7 @@ class EthSLApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('en', ''),
-        Locale('am', ''),
-      ],
+      supportedLocales: const [Locale('en', ''), Locale('am', '')],
       home: const RootApp(),
     );
   }
@@ -128,8 +125,7 @@ class _RootAppState extends ConsumerState<RootApp> {
         completedLessons.clear();
         completedLessons.addAll(prefs.getStringList('completedLessons') ?? []);
         final curriculum = await ref.read(curriculumProvider.future);
-        signsLearned =
-            curriculum.countCompletedInCurriculum(completedLessons);
+        signsLearned = curriculum.countCompletedInCurriculum(completedLessons);
         streak = prefs.getInt('streak') ?? 0;
         totalHours = prefs.getInt('totalHours') ?? 0;
       }
@@ -141,6 +137,7 @@ class _RootAppState extends ConsumerState<RootApp> {
 
       final hasSeenOnboarding = prefs.getBool('hasSeenOnboarding') ?? false;
       if (!mounted) return;
+      _syncDailyQuizInput();
       setState(() {
         showSplash = false;
         showOnboarding = !hasSeenOnboarding;
@@ -197,7 +194,18 @@ class _RootAppState extends ConsumerState<RootApp> {
 
   Future<void> _hydrateAfterAuth(int userId) async {
     await _hydrateProgressForUser(userId);
+    _syncDailyQuizInput();
     if (mounted) setState(() {});
+  }
+
+  /// Pushes the current user + completedLessons into [dailyQuizInputProvider]
+  /// so [dailyQuizProvider] regenerates with fresh data.
+  void _syncDailyQuizInput() {
+    final auth = ref.read(authSessionProvider);
+    ref.read(dailyQuizInputProvider.notifier).state = DailyQuizInput(
+      userId: auth.userId,
+      completedIds: Set.unmodifiable(completedLessons),
+    );
   }
 
   void _clearProgressState() {
@@ -227,10 +235,9 @@ class _RootAppState extends ConsumerState<RootApp> {
       totalHours += 1;
     });
     if (auth.isAuthenticated && auth.userId != null) {
-      await ref.read(userRepositoryProvider).updateCounters(
-            userId: auth.userId!,
-            totalPracticed: totalHours,
-          );
+      await ref
+          .read(userRepositoryProvider)
+          .updateCounters(userId: auth.userId!, totalPracticed: totalHours);
     }
     await persist();
   }
@@ -308,14 +315,16 @@ class _RootAppState extends ConsumerState<RootApp> {
       final destinationFile = File(dest);
       if (await destinationFile.exists() &&
           await VideoDownloader.isValidVideoFile(destinationFile)) {
-        await ref.read(lessonRepositoryProvider).setLocalVideoPath(lesson.id, dest);
+        await ref
+            .read(lessonRepositoryProvider)
+            .setLocalVideoPath(lesson.id, dest);
         final merged = lesson.copyWith(videoLocalPath: dest);
         if (!mounted) return;
         setState(() {
-            selectedLesson = merged;
-            videoDownloadBusy = false;
-            videoDownloadProgress = null;
-          });
+          selectedLesson = merged;
+          videoDownloadBusy = false;
+          videoDownloadProgress = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Video already available offline.')),
         );
@@ -389,12 +398,8 @@ class _RootAppState extends ConsumerState<RootApp> {
     final auth = ref.read(authSessionProvider);
     final uid = auth.userId;
     if (uid != null) {
-      await ref
-          .read(userRepositoryProvider)
-          .updateLanguage(uid, value);
-      ref
-          .read(authSessionProvider.notifier)
-          .applyLanguagePreference(value);
+      await ref.read(userRepositoryProvider).updateLanguage(uid, value);
+      ref.read(authSessionProvider.notifier).applyLanguagePreference(value);
     }
     await persist();
   }
@@ -451,9 +456,8 @@ class _RootAppState extends ConsumerState<RootApp> {
     final curriculumAsync = ref.watch(curriculumProvider);
 
     return curriculumAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
       data: (curriculum) {
         final body = _buildBody(
@@ -497,7 +501,6 @@ class _RootAppState extends ConsumerState<RootApp> {
     required String displayEmail,
   }) {
     switch (overlay) {
-
       case AppOverlay.lessonDetail:
         if (selectedCategory == null) {
           return _buildFallbackBody('No lesson category selected yet.');
@@ -539,10 +542,25 @@ class _RootAppState extends ConsumerState<RootApp> {
           },
         );
       case AppOverlay.quiz:
+        // For the daily quiz, pull generated questions from the provider
+        final isDaily = quizCategory == dailyQuizCategoryId;
+        final dailyResult = isDaily
+            ? ref.read(dailyQuizProvider).valueOrNull
+            : null;
+        if (isDaily && (dailyResult == null || dailyResult.questions.isEmpty)) {
+          return _buildFallbackBody(
+            'Complete a lesson before starting the daily quiz.',
+          );
+        }
+        final quizLessons = isDaily
+            ? (dailyResult?.lessons ?? [])
+            : (curriculum.lessonsByCategory[quizCategory] ?? []);
+
         return QuizScreen(
           language: language,
           categoryId: quizCategory,
-          categoryLessons: curriculum.lessonsByCategory[quizCategory] ?? [],
+          categoryLessons: quizLessons,
+          dailyQuestions: dailyResult?.questions ?? const [],
           onBack: () => setState(() => overlay = AppOverlay.none),
           onCorrectAnswer: (lesson) async {
             final uid = auth.userId;
@@ -550,20 +568,45 @@ class _RootAppState extends ConsumerState<RootApp> {
               await _markLessonLearnedOnAccount(uid, lesson.id);
             } else {
               if (completedLessons.add(lesson.id)) {
-                signsLearned = curriculum.countCompletedInCurriculum(completedLessons);
+                signsLearned = curriculum.countCompletedInCurriculum(
+                  completedLessons,
+                );
               }
             }
             await _incrementPracticedCount();
           },
           onQuizComplete: (score, totalQuestions) async {
             final uid = auth.userId;
-            if (uid == null) return;
-            await ref.read(quizRepositoryProvider).insertResult(
-                  userId: uid,
-                  categoryId: quizCategory,
-                  score: score,
-                  totalQuestions: totalQuestions,
-                );
+            if (uid != null) {
+              await ref
+                  .read(quizRepositoryProvider)
+                  .insertResult(
+                    userId: uid,
+                    categoryId: quizCategory,
+                    score: score,
+                    totalQuestions: totalQuestions,
+                  );
+            } else if (isDaily) {
+              final prefs = await SharedPreferences.getInstance();
+              final today = dailyQuizDateKey();
+              final storedScore = prefs.getInt(dailyQuizGuestScoreKey);
+              final storedTotal = prefs.getInt(dailyQuizGuestTotalKey);
+              final storedDate = prefs.getString(dailyQuizGuestDateKey);
+              final currentRatio = score / totalQuestions;
+              final bestRatio =
+                  storedScore != null && storedTotal != null && storedTotal > 0
+                  ? storedScore / storedTotal
+                  : -1.0;
+              if (storedDate != today || currentRatio > bestRatio) {
+                await prefs.setString(dailyQuizGuestDateKey, today);
+                await prefs.setInt(dailyQuizGuestScoreKey, score);
+                await prefs.setInt(dailyQuizGuestTotalKey, totalQuestions);
+              }
+            }
+            // Refresh daily quiz provider so the home card shows today's score
+            if (isDaily) {
+              ref.invalidate(dailyQuizProvider);
+            }
           },
         );
       case AppOverlay.aiPractice:
@@ -582,7 +625,9 @@ class _RootAppState extends ConsumerState<RootApp> {
                 await _markLessonLearnedOnAccount(uid, lid);
               } else {
                 if (completedLessons.add(lid)) {
-                  signsLearned = curriculum.countCompletedInCurriculum(completedLessons);
+                  signsLearned = curriculum.countCompletedInCurriculum(
+                    completedLessons,
+                  );
                 }
               }
             }
@@ -611,10 +656,10 @@ class _RootAppState extends ConsumerState<RootApp> {
                 overlay = AppOverlay.quiz;
               }),
               onViewAll: () => setState(() => current = AppScreen.lessons),
-              onOpenLesson: (lesson) =>
-                  unawaited(_openLessonWithMedia(lesson)),
+              onOpenLesson: (lesson) => unawaited(_openLessonWithMedia(lesson)),
               onLanguageChanged: _changeLanguage,
-              onOpenLiveTranslator: () => setState(() => overlay = AppOverlay.liveTranslator),
+              onOpenLiveTranslator: () =>
+                  setState(() => overlay = AppOverlay.liveTranslator),
             );
           case AppScreen.lessons:
             return LessonsScreen(
@@ -883,7 +928,9 @@ class _RootAppState extends ConsumerState<RootApp> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
                       child: Text(
-                        'ETHIOPIAN NATIONAL ASSOCIATION OF THE DEAF'.tr(language),
+                        'ETHIOPIAN NATIONAL ASSOCIATION OF THE DEAF'.tr(
+                          language,
+                        ),
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,

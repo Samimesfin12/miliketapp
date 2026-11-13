@@ -1107,36 +1107,27 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
   }
 
   Widget _loadingPlaceholder(double height, double r) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(r),
-      child: Container(
-        height: height,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF1E2A2B), Color(0xFF101515)],
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.4),
-              const SizedBox(height: 14),
-              Text(
-                widget.lesson.videoUrl != null &&
-                        VideoDownloader.parseDriveFileId(widget.lesson.videoUrl) !=
-                            null
-                    ? 'Preparing sign video…'
-                    : 'Loading video…',
-                style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return _ShimmerLoadingPlaceholder(
+      height: height,
+      borderRadius: r,
+      lesson: widget.lesson,
+      hideSignName: widget.hideTitle,
     );
+  }
+
+  /// Clears any stale cached Drive URL for this lesson then re-initialises
+  /// the player. Use this for the retry button so a 403 / expired URL is
+  /// re-resolved fresh rather than replayed.
+  Future<void> _retryPlayer() async {
+    final u = widget.lesson.videoUrl?.trim();
+    if (u != null && u.isNotEmpty) {
+      final driveId = VideoDownloader.parseDriveFileId(u);
+      if (driveId != null) {
+        VideoDownloader.evictCachedUrl(driveId);
+        debugPrint('Evicted stale Drive URL cache for $driveId before retry.');
+      }
+    }
+    await _initPlayer();
   }
 
   String _shortErrorMessage() {
@@ -1191,7 +1182,7 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
             ),
             const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: _initPlayer,
+              onPressed: _retryPlayer,
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Retry'),
               style: FilledButton.styleFrom(
@@ -1219,6 +1210,192 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
           fontSize: 11,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Loading stage text widget ───────────────────────────────────────────────
+
+/// Cycles through loading stage strings every 2.5 s with a crossfade transition.
+class _LoadingStageText extends StatefulWidget {
+  const _LoadingStageText();
+
+  @override
+  State<_LoadingStageText> createState() => _LoadingStageTextState();
+}
+
+class _LoadingStageTextState extends State<_LoadingStageText> {
+  static const _stages = [
+    'Connecting to Drive…',
+    'Fetching sign video…',
+    'Buffering…',
+    'Almost ready…',
+  ];
+
+  int _stage = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      if (mounted) setState(() => _stage = (_stage + 1) % _stages.length);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 400),
+      child: Text(
+        _stages[_stage],
+        key: ValueKey(_stage),
+        style: const TextStyle(
+          color: Colors.white70,
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Shimmer loading placeholder ─────────────────────────────────────────────
+
+/// Animated shimmer placeholder shown while the video is initialising.
+/// Set [hideSignName] to true (quiz mode) to suppress the sign-name pill
+/// that would otherwise reveal the correct answer.
+class _ShimmerLoadingPlaceholder extends StatefulWidget {
+  const _ShimmerLoadingPlaceholder({
+    required this.height,
+    required this.borderRadius,
+    required this.lesson,
+    this.hideSignName = false,
+  });
+
+  final double height;
+  final double borderRadius;
+  final LessonItem lesson;
+  final bool hideSignName;
+
+  @override
+  State<_ShimmerLoadingPlaceholder> createState() =>
+      _ShimmerLoadingPlaceholderState();
+}
+
+class _ShimmerLoadingPlaceholderState extends State<_ShimmerLoadingPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(widget.borderRadius),
+      child: SizedBox(
+        height: widget.height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Dark gradient base
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF1A2420), Color(0xFF0D1510)],
+                ),
+              ),
+            ),
+            // Shimmer wave overlay
+            AnimatedBuilder(
+              animation: _shimmer,
+              builder: (_, __) {
+                final t = _shimmer.value;
+                return Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment(-1.5 + t * 3.5, 0),
+                      end: Alignment(-0.5 + t * 3.5, 0),
+                      colors: const [
+                        Colors.transparent,
+                        Color(0x14FFFFFF),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            // Centre content
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Opacity(
+                    opacity: 0.6,
+                    child: Text(
+                      widget.lesson.thumbnail,
+                      style: const TextStyle(fontSize: 42),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    color: Color(0xFF4CAF86),
+                  ),
+                  const SizedBox(height: 14),
+                  const _LoadingStageText(),
+                ],
+              ),
+            ),
+            // Bottom pill with sign name — hidden in quiz mode
+            if (!widget.hideSignName)
+              Positioned(
+                bottom: 14,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.black45,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      widget.lesson.sign,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

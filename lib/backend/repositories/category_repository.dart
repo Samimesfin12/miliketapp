@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:esl_learning_flutter/backend/database/sqlite_helper.dart';
+import 'package:esl_learning_flutter/backend/models/daily_quiz_data.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 
 /// CRUD on [categories] table.
@@ -11,7 +12,12 @@ final class CategoryRepository {
 
   Future<List<Category>> allCategories() async {
     final db = await _helper.database;
-    final rows = await db.query('categories', orderBy: 'sort_order ASC');
+    final rows = await db.query(
+      'categories',
+      where: 'id != ?',
+      whereArgs: [dailyQuizCategoryId],
+      orderBy: 'sort_order ASC',
+    );
     return rows.map(_categoryFromRow).toList();
   }
 
@@ -93,8 +99,9 @@ final class CategoryRepository {
 
   Future<int> nextSortOrder() async {
     final db = await _helper.database;
-    final result =
-        await db.rawQuery('SELECT MAX(sort_order) AS m FROM categories');
+    final result = await db.rawQuery(
+      'SELECT MAX(sort_order) AS m FROM categories',
+    );
     final max = result.first['m'] as int?;
     return (max ?? -1) + 1;
   }

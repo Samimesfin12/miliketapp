@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:esl_learning_flutter/backend/models/curriculum_data.dart';
+import 'package:esl_learning_flutter/backend/models/daily_quiz_data.dart';
 import 'package:esl_learning_flutter/backend/providers.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
@@ -36,6 +37,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cultureSignsAsync = ref.watch(cultureCardSignsProvider);
+    final dailyQuizAsync = ref.watch(dailyQuizProvider);
 
     final mappedCategories = curriculum.categories.take(6).map((c) {
       return _QuickCategory(
@@ -94,14 +96,8 @@ class HomeScreen extends ConsumerWidget {
             PopupMenuButton<String>(
               onSelected: onLanguageChanged,
               itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'en',
-                  child: Text('English (EN)'),
-                ),
-                const PopupMenuItem(
-                  value: 'am',
-                  child: Text('አማርኛ (አማ)'),
-                ),
+                const PopupMenuItem(value: 'en', child: Text('English (EN)')),
+                const PopupMenuItem(value: 'am', child: Text('አማርኛ (አማ)')),
               ],
               child: Container(
                 height: 32,
@@ -250,13 +246,19 @@ class HomeScreen extends ConsumerWidget {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     color: Colors.white.withValues(alpha: 0.18),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.32)),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.32),
+                    ),
                   ),
                   child: Center(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.play_circle_fill, color: Colors.white70, size: 18),
+                        const Icon(
+                          Icons.play_circle_fill,
+                          color: Colors.white70,
+                          size: 18,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Resume Now'.tr(language),
@@ -312,10 +314,7 @@ class HomeScreen extends ConsumerWidget {
             return GestureDetector(
               onTap: () => onOpenCategory(item.category),
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 decoration: BoxDecoration(
                   color: index.isEven
                       ? const Color(0xFFF6F3F2)
@@ -338,7 +337,9 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      language == 'en' ? item.category.title : item.category.titleAm,
+                      language == 'en'
+                          ? item.category.title
+                          : item.category.titleAm,
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -362,44 +363,10 @@ class HomeScreen extends ConsumerWidget {
           },
         ),
         const SizedBox(height: 16),
-        GestureDetector(
-          onTap: () => onOpenQuiz('greetings'),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            decoration: BoxDecoration(
-              color: kAccent,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(
-              children: [
-                const CircleAvatar(
-                  radius: 16,
-                  backgroundColor: Color(0xFFF7D95E),
-                  child: Icon(Icons.light_mode_outlined, color: Colors.black87, size: 18),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Practice Quiz of the Day'.tr(language),
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(
-                        'Test Your Daily Goals!'.tr(language),
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, size: 24),
-              ],
-            ),
-          ),
+        _DailyQuizCard(
+          language: language,
+          dailyQuizAsync: dailyQuizAsync,
+          onTap: onOpenQuiz,
         ),
         const SizedBox(height: 18),
         Text(
@@ -573,7 +540,12 @@ class _CultureSignCard extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(14, compact ? 10 : 12, 14, compact ? 12 : 14),
+              padding: EdgeInsets.fromLTRB(
+                14,
+                compact ? 10 : 12,
+                14,
+                compact ? 12 : 14,
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -751,9 +723,10 @@ class _LiveTranslatorBannerState extends State<_LiveTranslatorBanner>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
-    _pulse = Tween<double>(begin: 0.92, end: 1.0).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
-    );
+    _pulse = Tween<double>(
+      begin: 0.92,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
   }
 
   @override
@@ -850,14 +823,20 @@ class _LiveTranslatorBannerState extends State<_LiveTranslatorBanner>
                                 Positioned(
                                   left: 8,
                                   top: 10,
-                                  child: Icon(Icons.sign_language_rounded,
-                                      color: Colors.white70, size: 16),
+                                  child: Icon(
+                                    Icons.sign_language_rounded,
+                                    color: Colors.white70,
+                                    size: 16,
+                                  ),
                                 ),
                                 Positioned(
                                   right: 8,
                                   bottom: 10,
-                                  child: Icon(Icons.mic_rounded,
-                                      color: Colors.white, size: 18),
+                                  child: Icon(
+                                    Icons.mic_rounded,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
                                 ),
                               ],
                             ),
@@ -877,16 +856,23 @@ class _LiveTranslatorBannerState extends State<_LiveTranslatorBanner>
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 7, vertical: 2),
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF00FF7F).withValues(alpha: 0.2),
+                                color: const Color(
+                                  0xFF00FF7F,
+                                ).withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(5),
                               ),
                               child: const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.fiber_manual_record,
-                                      color: Color(0xFF66FF99), size: 8),
+                                  Icon(
+                                    Icons.fiber_manual_record,
+                                    color: Color(0xFF66FF99),
+                                    size: 8,
+                                  ),
                                   SizedBox(width: 3),
                                   Text(
                                     'LIVE',
@@ -944,10 +930,14 @@ class _LiveTranslatorBannerState extends State<_LiveTranslatorBanner>
                       color: Colors.white.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.3)),
+                        color: Colors.white.withValues(alpha: 0.3),
+                      ),
                     ),
-                    child: const Icon(Icons.arrow_forward_rounded,
-                        color: Colors.white, size: 18),
+                    child: const Icon(
+                      Icons.arrow_forward_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                   ),
                 ],
               ),
@@ -959,3 +949,213 @@ class _LiveTranslatorBannerState extends State<_LiveTranslatorBanner>
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Daily Quiz Card  —  shown on the Home screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DailyQuizCard extends StatelessWidget {
+  const _DailyQuizCard({
+    required this.language,
+    required this.dailyQuizAsync,
+    required this.onTap,
+  });
+
+  final String language;
+  final AsyncValue<DailyQuizData> dailyQuizAsync;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return dailyQuizAsync.when(
+      loading: () => _cardShell(
+        language: language,
+        subtitle: language == 'en'
+            ? 'Loading your questions...'
+            : 'ጥያቄዎቹን በመጫን ላይ...',
+        trailing: const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.black54,
+          ),
+        ),
+        onTap: null,
+      ),
+      error: (_, _) => _cardShell(
+        language: language,
+        subtitle: language == 'en' ? 'Could not load quiz' : 'ጥያቄ መጫን አልተቻለም',
+        trailing: const Icon(Icons.error_outline, color: Colors.red),
+        onTap: null,
+      ),
+      data: (result) {
+        // No completed lessons yet — locked state
+        if (!result.hasQuestions) {
+          return _cardShell(
+            language: language,
+            subtitle: language == 'en'
+                ? 'Complete at least 1 lesson to unlock the daily quiz'
+                : 'ዕለታዊ ጥያቄዎን ለማግኘት አንድ ትምህርት ያጠናቅቁ!',
+            trailing: const Icon(
+              Icons.lock_outline,
+              size: 22,
+              color: Colors.black45,
+            ),
+            locked: true,
+            onTap: null,
+          );
+        }
+
+        // Already taken today — show score badge + retake button
+        if (result.takenToday) {
+          final total = result.todayTotal;
+          if (total == null || total <= 0) {
+            return _cardShell(
+              language: language,
+              subtitle: language == 'en'
+                  ? '${result.questionCount} questions from your learned signs'
+                  : '${result.questionCount} ጥያቄዎች ከተማሩት ምልክቶች',
+              trailing: const Icon(Icons.chevron_right, size: 24),
+              onTap: () => onTap(dailyQuizCategoryId),
+            );
+          }
+          final pct = ((result.todayScore! / total) * 100).round();
+          final emoji = pct >= 80 ? '🎉' : (pct >= 50 ? '👍' : '💪');
+          return _cardShell(
+            language: language,
+            subtitle: language == 'en'
+                ? 'Today: ${result.todayScore}/$total correct  $emoji'
+                : 'ዛሬ: ${result.todayScore}/$total ትክክል  $emoji',
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A6D40),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: Text(
+                '$pct%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            retakeLabel: language == 'en' ? 'Retake' : 'ደጋግም',
+            onTap: () => onTap(dailyQuizCategoryId),
+          );
+        }
+
+        // Ready to take — show question count
+        return _cardShell(
+          language: language,
+          subtitle: language == 'en'
+              ? '${result.questionCount} questions from your learned signs'
+              : '${result.questionCount} ጥያቄዎች ከተማሩት ምልክቶች',
+          trailing: const Icon(Icons.chevron_right, size: 24),
+          onTap: () => onTap(dailyQuizCategoryId),
+        );
+      },
+    );
+  }
+
+  static Widget _cardShell({
+    required String language,
+    required String subtitle,
+    required Widget? trailing,
+    required VoidCallback? onTap,
+    bool locked = false,
+    String? retakeLabel,
+  }) {
+    final isEn = language == 'en';
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 300),
+        opacity: locked ? 0.65 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: kAccent,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: locked
+                ? null
+                : [
+                    BoxShadow(
+                      color: kAccent.withValues(alpha: 0.28),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const CircleAvatar(
+                    radius: 16,
+                    backgroundColor: Color(0xFFF7D95E),
+                    child: Icon(
+                      Icons.light_mode_outlined,
+                      color: Colors.black87,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isEn ? 'Practice Quiz of the Day' : 'የቀኑ ልምምድ ጥያቄ',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(fontSize: 12, height: 1.3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ?trailing,
+                ],
+              ),
+              ...?retakeLabel == null
+                  ? null
+                  : <Widget>[
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(99),
+                            border: Border.all(
+                              color: Colors.black.withValues(alpha: 0.15),
+                            ),
+                          ),
+                          child: Text(
+                            retakeLabel,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
