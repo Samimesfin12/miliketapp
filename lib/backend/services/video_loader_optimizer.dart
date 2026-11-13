@@ -139,29 +139,42 @@ final class VideoLoaderOptimizer {
   /// Process queued prefetch tasks in priority order
   static Future<void> _processPrefetchQueue() async {
     if (_prefetchQueue.isEmpty) return;
-
-    // Sort by priority (ascending = highest first)
     final sorted = _prefetchQueue.values.toList()
       ..sort((a, b) => a.priority.compareTo(b.priority));
-
     for (final task in sorted) {
       if (task.isCompleted) {
         _prefetchQueue.removeWhere((_, v) => v == task);
         continue;
       }
-
       if (DateTime.now().difference(task.startedAt) > task.timeout) {
-        debugPrint('Prefetch timeout for ${task.fileId ?? task.videoUrl}');
         _prefetchQueue.removeWhere((_, v) => v == task);
         continue;
       }
-
-      try {
-        await Future.delayed(Duration(milliseconds: 200)); // Rate limit
-        // Actual prefetch happens asynchronously
-      } catch (e) {
-        debugPrint('Prefetch error: $e');
+      if (!task.isRunning) {
+        task.isRunning = true;
+        unawaited(Future(() async {
+          try {
+            final driveId = VideoDownloader.parseDriveFileId(task.videoUrl);
+            if (driveId != null) {
+              final cacheFile = File(VideoDownloader.drivePlaybackCachePath(task.cacheDir, driveId));
+              if (!await VideoDownloader.isValidVideoFile(cacheFile)) {
+                await VideoDownloader().downloadDriveVideoToFile(
+                  fileId: driveId,
+                  destinationPath: cacheFile.path,
+                );
+                debugPrint('Prefetch complete: $driveId');
+              }
+            }
+          } catch (e) {
+            debugPrint('Prefetch failed: $e');
+          } finally {
+            task.isCompleted = true;
+            task.isRunning = false;
+            _prefetchQueue.removeWhere((_, v) => v == task);
+          }
+        }));
       }
+      await Future.delayed(const Duration(milliseconds: 100));
     }
   }
 
@@ -306,6 +319,7 @@ class _PrefetchTask {
   final DateTime startedAt;
   final Duration timeout;
   bool isCompleted = false;
+  bool isRunning = false;
 
   _PrefetchTask({
     required this.videoUrl,

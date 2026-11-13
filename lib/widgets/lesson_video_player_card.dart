@@ -725,7 +725,10 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
   }
 
   Widget _buildPlayerSurface() {
-    final height = MediaQuery.sizeOf(context).width * 9 / 16;
+    // Tall player: sign language videos are captured portrait-oriented,
+    // so a taller aspect ratio (≈ 4:3 or more) gives much better framing.
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final height = screenWidth * 1.05; // ~portrait 1:1.05 — large, sign-friendly
     final r = widget.borderRadius;
 
     if (_error) {
@@ -737,7 +740,6 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
     }
 
     final v = _controller.value;
-    final aspect = v.aspectRatio == 0 ? (16 / 9) : v.aspectRatio;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(r),
@@ -754,13 +756,8 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
               if (_controlsVisible) _scheduleHideControls();
             },
             onDoubleTapDown: (details) {
-              _doubleTapSeek(
-                details.localPosition,
-                Size(
-                  MediaQuery.sizeOf(context).width,
-                  MediaQuery.sizeOf(context).width * 9 / 16,
-                ),
-              );
+              final w = MediaQuery.sizeOf(context).width;
+              _doubleTapSeek(details.localPosition, Size(w, w * 1.05));
             },
             child: Stack(
               fit: StackFit.expand,
@@ -768,18 +765,20 @@ class _LessonVideoPlayerCardState extends State<LessonVideoPlayerCard>
                 ValueListenableBuilder<bool>(
                   valueListenable: _mirror,
                   builder: (context, mirror, _) {
-                    return Center(
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.diagonal3Values(
-                          mirror ? -1.0 : 1.0,
-                          1.0,
-                          1.0,
-                        ),
-                        child: RepaintBoundary(
-                          child: AspectRatio(
-                            aspectRatio: aspect,
-                            child: VideoPlayer(_controller),
+                    return Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.diagonal3Values(
+                        mirror ? -1.0 : 1.0, 1.0, 1.0,
+                      ),
+                      child: RepaintBoundary(
+                        child: SizedBox.expand(
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width:  _controller.value.size.width,
+                              height: _controller.value.size.height,
+                              child: VideoPlayer(_controller),
+                            ),
                           ),
                         ),
                       ),

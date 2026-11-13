@@ -11,7 +11,16 @@ import 'package:path/path.dart' as p;
 /// EthSL videos are produced off-device (yt-dlp + FFmpeg) and hosted on Drive as
 /// `.mp4` files. Store `drive:FILE_ID` or a standard Drive link in [lessons.video_url].
 final class VideoDownloader {
-  VideoDownloader({Dio? dio}) : _dio = dio ?? Dio();
+  VideoDownloader({Dio? dio}) : _dio = dio ?? Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 120),
+      sendTimeout: const Duration(seconds: 30),
+    ),
+  );
+
+  /// Public map exposing background download progress for UI (driveId -> 0.0..1.0)
+  static final Map<String, double> downloadProgressMap = {};
 
   final Dio _dio;
 
@@ -124,13 +133,17 @@ final class VideoDownloader {
       try {
         final tempDest = '$destinationPath.tmp';
         final tempFile = File(tempDest);
-        if (await tempFile.exists()) {
-          await tempFile.delete();
-        }
+        // Resume from existing partial download (downloadDriveVideoToFile handles this internally)
         await downloadDriveVideoToFile(
           fileId: driveId,
           destinationPath: tempDest,
+          onProgress: (received, total) {
+            if (total > 0) {
+              downloadProgressMap[driveId] = received / total;
+            }
+          },
         );
+        downloadProgressMap.remove(driveId);
         final destFile = File(destinationPath);
         if (await destFile.exists()) {
           await destFile.delete();
@@ -138,6 +151,7 @@ final class VideoDownloader {
         await tempFile.rename(destinationPath);
       } catch (e) {
         debugPrint('Background download error for $driveId: $e');
+        downloadProgressMap.remove(driveId);
         try {
           final tempFile = File('$destinationPath.tmp');
           if (await tempFile.exists()) {
@@ -492,13 +506,20 @@ final class VideoDownloader {
       final stream = response.data?.stream;
       if (stream == null) throw StateError('Empty download stream');
 
+      var bytesSinceFlush = 0;
+      const flushThreshold = 2 * 1024 * 1024; // flush every 2MB
       await for (final chunk in stream) {
         sink.add(chunk);
         received += chunk.length;
+        bytesSinceFlush += chunk.length;
         if (onProgress != null && totalLen != null) {
           onProgress(received, totalLen);
         } else {
           onProgress?.call(received, received);
+        }
+        if (bytesSinceFlush >= flushThreshold) {
+          await sink.flush();
+          bytesSinceFlush = 0;
         }
       }
       await sink.flush();
@@ -545,7 +566,7 @@ final class VideoDownloader {
       // Google Drive links are valid for at least 4 hours.
       // Let's use a safe threshold of 3 hours (10,800,000 milliseconds).
       final now = DateTime.now().millisecondsSinceEpoch;
-      if (now - timestamp < 3 * 3600 * 1000) {
+      if (now - timestamp < 6 * 3600 * 1000) {
         return url;
       }
     } catch (_) {}

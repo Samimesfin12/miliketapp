@@ -2,11 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:esl_learning_flutter/models/app_models.dart';
 import 'package:esl_learning_flutter/theme/app_theme.dart';
 import 'package:esl_learning_flutter/widgets/lesson_video_player_card.dart';
-import 'package:esl_learning_flutter/backend/services/video_downloader.dart';
 import 'package:esl_learning_flutter/backend/services/localisation_service.dart';
 
 class VideoScreen extends StatefulWidget {
@@ -45,32 +43,9 @@ class VideoScreen extends StatefulWidget {
 class _VideoScreenState extends State<VideoScreen> {
   bool _watched = false;
 
-  List<LessonItem> _lessonsInCategory() => widget.categoryLessons;
-
-  int _lessonIndex() {
-    final list = _lessonsInCategory();
-    final i = list.indexWhere((l) => l.id == widget.lesson.id);
-    return i;
-  }
-
-  void _goPrevious() {
-    final list = _lessonsInCategory();
-    final i = _lessonIndex();
-    if (i <= 0) return;
-    widget.onLessonChanged(list[i - 1]);
-  }
-
-  void _goNext() {
-    final list = _lessonsInCategory();
-    final i = _lessonIndex();
-    if (i < 0 || i >= list.length - 1) return;
-    widget.onLessonChanged(list[i + 1]);
-  }
-
   @override
   void initState() {
     super.initState();
-    _preloadNextVideo();
   }
 
   @override
@@ -78,32 +53,6 @@ class _VideoScreenState extends State<VideoScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.lesson.id != widget.lesson.id) {
       setState(() => _watched = false);
-      _preloadNextVideo();
-    }
-  }
-
-  void _preloadNextVideo() {
-    final list = _lessonsInCategory();
-    final i = _lessonIndex();
-    for (int offset = 1; offset <= 2; offset++) {
-      final nextIdx = i + offset;
-      if (nextIdx >= 0 && nextIdx < list.length) {
-        final nextLesson = list[nextIdx];
-        final nextUrl = nextLesson.videoUrl?.trim();
-        final nextLocal = nextLesson.videoLocalPath?.trim();
-        if (nextUrl != null && nextUrl.isNotEmpty && (nextLocal == null || nextLocal.isEmpty)) {
-          final driveId = VideoDownloader.parseDriveFileId(nextUrl);
-          if (driveId != null) {
-            getTemporaryDirectory().then((cacheDir) async {
-              try {
-                await VideoDownloader().resolvePlaybackSource(nextUrl, cacheDir: cacheDir);
-              } catch (e) {
-                debugPrint('Preloading next video failed (offset $offset): $e');
-              }
-            }).catchError((_) {});
-          }
-        }
-      }
     }
   }
 
@@ -304,125 +253,36 @@ class _VideoScreenState extends State<VideoScreen> {
                 ),
                 const SizedBox(height: 32),
                 SizedBox(
-                  height: 72,
-                  child: ElevatedButton(
-                    onPressed: widget.onStartQuiz,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFE09A),
-                      foregroundColor: Colors.black,
-                      elevation: 2,
+                  height: 56,
+                  child: FilledButton(
+                    onPressed: widget.onStartAI,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: kPrimaryDark,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          'Practice Quiz'.tr(widget.language),
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
+                        const Icon(Icons.videocam_outlined, size: 22),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'AI Practice'.tr(widget.language),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        const Icon(Icons.quiz_outlined, size: 20),
+                        const Icon(Icons.arrow_forward_rounded, size: 20),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                Builder(
-                  builder: (context) {
-                    final list = _lessonsInCategory();
-                    final i = _lessonIndex();
-                    final canPrev = i > 0;
-                    final canNext = i >= 0 && i < list.length - 1;
-                    return Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: canPrev ? _goPrevious : null,
-                                style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(60),
-                                  side: const BorderSide(
-                                    color: Color(0xFFD2CED9),
-                                    width: 2,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                ),
-                                icon: const Icon(
-                                  Icons.chevron_left,
-                                  color: Colors.black,
-                                ),
-                                label: Text(
-                                  'Previous'.tr(widget.language),
-                                  style: const TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: FilledButton(
-                                onPressed: canNext ? _goNext : null,
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(60),
-                                  backgroundColor: kPrimaryDark,
-                                  disabledBackgroundColor: const Color(
-                                    0xFFB8C4BE,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Next'.tr(widget.language),
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.chevron_right, size: 20),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: widget.onStartAI,
-                          icon: const Icon(
-                            Icons.videocam_outlined,
-                            color: kPrimaryDark,
-                            size: 18,
-                          ),
-                          label: Text(
-                            'AI Practice'.tr(widget.language),
-                            style: const TextStyle(
-                              color: kPrimaryDark,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 100),
+                const SizedBox(height: 24),
                 if (_watched)
                   Container(
                     padding: const EdgeInsets.symmetric(

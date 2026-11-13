@@ -257,7 +257,6 @@ class _SignToSpeechTabState extends ConsumerState<_SignToSpeechTab> {
   String _lastAnnouncedSignId = '';
 
   // ── TTS ──────────────────────────────────────────────────────────────────
-  bool _autoSpeak = true;
   double _speakerVolume = 0.85;
   final TranslatorTtsService _tts = TranslatorTtsService.instance;
 
@@ -368,7 +367,7 @@ class _SignToSpeechTabState extends ConsumerState<_SignToSpeechTab> {
           _sentenceAm.add(result.labelAm);
         });
         await _tts.setVolume(_speakerVolume);
-        if (_autoSpeak) await _tts.speakBoth(result.labelEn, result.labelAm);
+        await _tts.speakBoth(result.labelEn, result.labelAm);
         await Future.delayed(const Duration(milliseconds: 2100));
         if (mounted) _lastAnnouncedSignId = '';
       }
@@ -400,7 +399,7 @@ class _SignToSpeechTabState extends ConsumerState<_SignToSpeechTab> {
           _sentenceAm.add(result.labelAm);
         });
         await _tts.setVolume(_speakerVolume);
-        if (_autoSpeak) await _tts.speakBoth(result.labelEn, result.labelAm);
+        await _tts.speakBoth(result.labelEn, result.labelAm);
         // Shorter cooldown for single-sign snapping
         await Future.delayed(const Duration(milliseconds: 1200));
         if (mounted) _lastAnnouncedSignId = '';
@@ -514,9 +513,7 @@ class _SignToSpeechTabState extends ConsumerState<_SignToSpeechTab> {
         _TranslationCard(
           amText: displayAm,
           enText: displayEn,
-          autoSpeak: _autoSpeak,
           speakerVolume: _speakerVolume,
-          onAutoSpeakToggle: (v) => setState(() => _autoSpeak = v),
           onVolumeChanged: (v) async {
             setState(() => _speakerVolume = v);
             await _tts.setVolume(v);
@@ -824,9 +821,7 @@ class _TranslationCard extends StatelessWidget {
   const _TranslationCard({
     required this.amText,
     required this.enText,
-    required this.autoSpeak,
     required this.speakerVolume,
-    required this.onAutoSpeakToggle,
     required this.onVolumeChanged,
     required this.onSpeak,
     required this.onCopy,
@@ -836,9 +831,7 @@ class _TranslationCard extends StatelessWidget {
 
   final String amText;
   final String enText;
-  final bool autoSpeak;
   final double speakerVolume;
-  final ValueChanged<bool> onAutoSpeakToggle;
   final ValueChanged<double> onVolumeChanged;
   final VoidCallback onSpeak;
   final VoidCallback onCopy;
@@ -904,7 +897,7 @@ class _TranslationCard extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          // Speak + Auto-speak row
+          // Speak button + Auto-speak badge
           Row(children: [
             Expanded(
               child: GestureDetector(
@@ -926,23 +919,21 @@ class _TranslationCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
+            // Permanent auto-speak active badge
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFF0EDED),
+                color: const Color(0xFFE8F5E9),
                 borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: kPrimary.withValues(alpha: 0.3)),
               ),
-              child: Row(children: [
-                const Icon(Icons.graphic_eq_rounded, size: 18, color: kPrimaryDark),
-                const SizedBox(width: 6),
-                const Text('Auto-\nspeak', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 4),
-                Switch(
-                  value: autoSpeak,
-                  onChanged: onAutoSpeakToggle,
-                  activeThumbColor: kPrimary,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+              child: const Row(children: [
+                Icon(Icons.graphic_eq_rounded, size: 16, color: kPrimary),
+                SizedBox(width: 5),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Auto-speak', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: kPrimary)),
+                  Text('ACTIVE ●', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Color(0xFF2E7D32))),
+                ]),
               ]),
             ),
           ]),
@@ -1056,10 +1047,11 @@ class _SpeechToTextTabState extends State<_SpeechToTextTab>
 
   // ── STT ──────────────────────────────────────────────────────────────────
   final SpeechToText _stt = SpeechToText();
-  bool _sttAvailable = false;
-  bool _isListening = false;
-  bool _keepListening = false;      // true while user wants session active
-  bool _amharicSttAvailable = false; // whether device has am-ET STT locale
+  bool _sttAvailable  = false;
+  bool _isListening   = false;
+  bool _keepListening = false; // true while user wants session active
+  // null = not yet tried, true = am-ET confirmed OK, false = fell back to en-US
+  bool? _amharicConfirmed;
 
   // Text state ─────────────────────────────────────────────────────────────
   // _cumulativeText   : all *confirmed* (finalResult) sentences from past segments
@@ -1105,14 +1097,6 @@ class _SpeechToTextTabState extends State<_SpeechToTextTab>
         onError: _onSttError,
         debugLogging: false,
       );
-      if (_sttAvailable) {
-        // Check whether device actually has an Amharic STT locale
-        final locales = await _stt.locales();
-        _amharicSttAvailable = locales.any((l) =>
-            l.localeId.toLowerCase().startsWith('am'));
-        debugPrint('STT locales: ${locales.map((l) => l.localeId).join(', ')}');
-        debugPrint('Amharic STT available: $_amharicSttAvailable');
-      }
       if (mounted) setState(() {});
     } catch (e) {
       debugPrint('STT init error: $e');
@@ -1141,12 +1125,35 @@ class _SpeechToTextTabState extends State<_SpeechToTextTab>
 
   void _onSttError(SpeechRecognitionError error) {
     if (!mounted) return;
+    debugPrint('STT error: ${error.errorMsg} (permanent: ${error.permanent})');
+
+    // If Amharic locale was attempted and the engine rejected it,
+    // silently retry with English — no popup, no SnackBar.
+    final isLocaleError = error.errorMsg.contains('error_language_not_supported') ||
+        error.errorMsg.contains('not_supported') ||
+        error.errorMsg.contains('language_not_supported');
+    if (_listenAmharic && _amharicConfirmed == null && isLocaleError) {
+      // First failure on am-ET — fall back silently
+      setState(() {
+        _isListening = false;
+        _amharicConfirmed = false;
+        _statusText = 'Using English (Amharic STT not on device)';
+      });
+      if (_keepListening) {
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (!mounted || !_keepListening) return;
+          _startListeningFallback();
+        });
+      }
+      return;
+    }
+
     setState(() {
       _isListening = false;
-      _statusText = 'Error: ${error.errorMsg}';
+      _statusText   = error.errorMsg;
     });
-    // On non-permanent errors, try restarting
-    if (error.permanent == false && _keepListening) {
+    // On other non-permanent errors, auto-restart normally
+    if (!error.permanent && _keepListening) {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (!mounted || !_keepListening) return;
         _startListening();
@@ -1196,32 +1203,9 @@ class _SpeechToTextTabState extends State<_SpeechToTextTab>
   Future<void> _startListening() async {
     if (!_sttAvailable || !mounted) return;
 
-    // Determine locale:
-    // If user wants Amharic but device has no am-ET STT engine, fall back to en-US
-    // and show a warning once.
-    String localeId;
-    if (_listenAmharic) {
-      if (_amharicSttAvailable) {
-        // Try both common formats — am-ET (iOS/Windows) and am_ET (Android)
-        localeId = 'am-ET';
-      } else {
-        localeId = 'en-US';
-        if (mounted && _cumulativeText.isEmpty && _currentSegment.isEmpty) {
-          // Show one-time notice
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Amharic STT not installed on this device. '  
-                'Recording in English. Install Amharic voice input from Settings.',
-              ),
-              duration: Duration(seconds: 5),
-            ),
-          );
-        }
-      }
-    } else {
-      localeId = 'en-US';
-    }
+    // Always try the requested locale first.
+    // If am-ET isn't supported, _onSttError fires and we retry silently with en-US.
+    final localeId = _listenAmharic ? 'am-ET' : 'en-US';
 
     await _stt.listen(
       onResult: _onResult,
@@ -1232,7 +1216,25 @@ class _SpeechToTextTabState extends State<_SpeechToTextTab>
         partialResults: true,
         cancelOnError: false,
         listenMode: ListenMode.dictation,
-        // onDevice: false (cloud STT) — supports Amharic on more devices
+      ),
+    );
+    if (mounted) setState(() => _isListening = true);
+  }
+
+  // Called when STT engine rejects am-ET and fires an error.
+  // We silently switch to en-US for this session.
+  Future<void> _startListeningFallback() async {
+    if (!_sttAvailable || !mounted) return;
+    setState(() => _amharicConfirmed = false);
+    await _stt.listen(
+      onResult: _onResult,
+      listenOptions: SpeechListenOptions(
+        localeId: 'en-US',
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 5),
+        partialResults: true,
+        cancelOnError: false,
+        listenMode: ListenMode.dictation,
       ),
     );
     if (mounted) setState(() => _isListening = true);
@@ -1242,11 +1244,15 @@ class _SpeechToTextTabState extends State<_SpeechToTextTab>
     if (!mounted) return;
     final words = result.recognizedWords;
 
+    // Mark am-ET as confirmed the first time we get any words back
+    if (words.isNotEmpty && _listenAmharic && _amharicConfirmed == null) {
+      setState(() => _amharicConfirmed = true);
+    }
+
     if (result.finalResult) {
       // ── Confirmed sentence: append to cumulative text ─────────────────────
       if (words.trim().isNotEmpty) {
         setState(() {
-          // Append with a space separator between sentences
           _cumulativeText = _cumulativeText.isEmpty
               ? words.trim()
               : '$_cumulativeText ${words.trim()}';
@@ -1295,13 +1301,14 @@ class _SpeechToTextTabState extends State<_SpeechToTextTab>
           isListening: _isListening,
           keepListening: _keepListening,
           sttAvailable: _sttAvailable,
-          amharicSttAvailable: _amharicSttAvailable,
+          amharicSttAvailable: _amharicConfirmed != false,
           pulseAnim: _pulseAnim,
           recognizedText: _recognizedText,
           statusText: _statusText,
           listenAmharic: _listenAmharic,
           onToggleLocale: () => setState(() {
             _listenAmharic = !_listenAmharic;
+            _amharicConfirmed = null; // re-test locale on next listen
             // Restart with new locale if already listening
             if (_keepListening) {
               _stt.stop().then((_) => _startListening());
@@ -1377,6 +1384,7 @@ class _MicCard extends StatelessWidget {
   final bool isListening;
   final bool keepListening;
   final bool sttAvailable;
+  // true = am-ET works (or not yet tried), false = fell back to en-US
   final bool amharicSttAvailable;
   final Animation<double> pulseAnim;
   final String recognizedText;
